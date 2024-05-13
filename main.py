@@ -30,7 +30,7 @@ parser.add_argument('--temperature', type=float, default = 1.0, help='Contrastiv
 parser.add_argument('--logging', type=bool, default = False, help='logging')
 parser.add_argument('--date', type=str, default = "0000", help='date')
 parser.add_argument('--ver', type=str, default = "origin", help='modified version') # [origin, thm_exp, ]
-parser.add_argument('--times', type=str, default = "1", help='times') # [1,2,3,4,5]
+parser.add_argument('--idx', type=str, default = "1", help='index') # [1,2,3,4,5]
 
 args = parser.parse_args()
 
@@ -70,7 +70,7 @@ def main():
 if __name__ == '__main__':
     if args.logging == True:
         old_stdout = sys.stdout
-        log_file = open(f'log/{args.dataset_str}_{args.date}_{args.ver}_{args.times}.log',"w")
+        log_file = open(f'log/{args.dataset_str}_{args.date}_{args.ver}_{args.idx}.log',"w")
         sys.stdout = log_file
         
         set_random_seed(args.seed)
