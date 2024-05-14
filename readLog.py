@@ -37,4 +37,7 @@ for i in range(1,6):
     all_result.append(result)
     
 df = pd.DataFrame(all_result,columns=["epoch","test auc","epoch","hit@10","auc","epoch","hit@20","auc","epoch","hit@50","auc"])
-df.to_csv(f"{title}.csv")
+df=df.astype(float)
+column_means = df.mean()
+df.loc[len(df)] = column_means
+df.to_csv(f"{cwd}/{title}.csv")
