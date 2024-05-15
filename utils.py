@@ -289,8 +289,9 @@ def Graph_Modify_Constraint_exp(bias_Z, original_graph, k, bound):
     degree_weight_adj_sc = torch.sigmoid(degree_weight_adj)
     # degree weight big => node centrality small => remove probability big 
     # difference big => not-well learned yet => choose smallest k
-    difference = (difference + (1-degree_weight_adj_sc))/2
-    
+    difference = (0.4*difference + 0.6*(1-degree_weight_adj_sc))   
+    # _, indices = torch.topk(degree_weight_adj_sc.flatten(), k, largest=True)
+    # values = difference.flatten()[indices]
     values, indices = torch.topk(difference.flatten(), k, largest = False)
     indices_mask = ((values >= 0.0) & (values <= bound))
     mask = indices[indices_mask].type(torch.long)

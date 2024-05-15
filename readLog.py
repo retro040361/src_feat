@@ -7,7 +7,7 @@ if cwd.split('/')[-1] == "src":
     cwd=cwd[:-3]
 
 # 讀取.log文件
-title = "citeseer_0514_thm_exp"
+title = "amazon_photo_0514_thm_exp"
 all_result = []
 for i in range(1,6):
     result = []

@@ -293,7 +293,7 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     data_augmenter_optimizer = Adam(data_augmenter.parameters(), lr = 0.01, weight_decay = weight_decay)
 
     best_acc = 0.0; best_roc = 0.0; best_ap = 0.0
-    best_hit10 = 0.0; best_hit20 = 0.0; best_hit50 = 0.0; 
+    best_hit1 = 0.0;best_hit3 = 0.0;best_hit10 = 0.0; best_hit20 = 0.0; best_hit50 = 0.0; 
     modification_ratio_history = []
     roc_history = []
     # train model
@@ -373,25 +373,30 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
         roc_history.append(test_roc)
         # val_acc, test_acc = logist_regressor_classification(device = device, Z = encoder.Z.clone().detach(), labels = labels, idx_train = idx_train, idx_val = idx_val, idx_test = idx_test)
         print(f'Epoch: {epoch + 1}, train_loss= {loss.item():.4f}, train_acc= {train_acc:.4f}, val_roc= {val_roc:.4f}, val_ap= {val_ap:.4f}, test_roc= {test_roc:.4f}, test_ap= {test_ap:.4f}, time= {time.time() - t:.4f}')
-        print(f'Hit@K for val: 10={val_hit[0]}, 20={val_hit[1]}, 50={val_hit[2]}')
-        print(f'Hit@K for test: 10={test_hit[0]}, 20={test_hit[1]}, 50={test_hit[2]}')
+        print(f'Hit@K for val: 1={val_hit[0]}, 3={val_hit[1]}, 10={val_hit[2]}, 20={val_hit[3]}')
+        print(f'Hit@K for test: 1={test_hit[0]}, 3={test_hit[1]}, 10={test_hit[2]}, 20={test_hit[3]}')
+        # print(f'Hit@K for test: 10={test_hit[0]}, 20={test_hit[1]}, 50={test_hit[2]}')
         # if val_acc > best_acc:
         #     best_acc = val_acc
         #     best_test_acc = test_acc
         #     best_classi_epoch = epoch
         #     print(f'Update Best Acc, Epoch = {epoch+1}, Val_acc = {best_acc:.3f}, Test_acc = {test_acc:.3f}')
-        if test_hit[0] > best_hit10:
-            best_hit10 = test_hit[0]
+        if test_hit[0] > best_hit1:
+            best_hit1 = test_hit[0]
+            best_hit1_roc = test_roc
+            best_hit1_ep = epoch 
+        if test_hit[1] > best_hit3:
+            best_hit3 = test_hit[1]
+            best_hit3_roc = test_roc
+            best_hit3_ep = epoch 
+        if test_hit[2] > best_hit10:
+            best_hit10 = test_hit[2]
             best_hit10_roc = test_roc
-            best_hit10_ep = epoch 
-        if test_hit[1] > best_hit20:
-            best_hit20 = test_hit[1]
+            best_hit10_ep = epoch
+        if test_hit[3] > best_hit20:
+            best_hit20 = test_hit[3]
             best_hit20_roc = test_roc
-            best_hit20_ep = epoch 
-        if test_hit[2] > best_hit50:
-            best_hit50 = test_hit[2]
-            best_hit50_roc = test_roc
-            best_hit50_ep = epoch    
+            best_hit20_ep = epoch    
         if val_roc > best_roc:
             best_roc = val_roc
             best_test_roc = test_roc
@@ -403,12 +408,14 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
 
     # print(f'best classification epoch = {best_classi_epoch+1}, val_acc = {best_acc:.3f}, test_acc = {best_test_acc:.3f}')
     print(f'best link prediction epoch = {best_link_epoch+1}, Val_roc = {best_roc:.3f}, val_ap = {best_ap:.3f}, test_roc = {best_test_roc:.3f}, test_ap = {best_test_ap:.3f}')
+    print(f'best hit@1 epoch = {best_hit1_ep}, hit@1 = {best_hit1}, val = {best_hit1_roc}')
+    print(f'best hit@3 epoch = {best_hit3_ep}, hit@3 = {best_hit3}, val = {best_hit3_roc}')
     print(f'best hit@10 epoch = {best_hit10_ep}, hit@10 = {best_hit10}, val = {best_hit10_roc}')
     print(f'best hit@20 epoch = {best_hit20_ep}, hit@20 = {best_hit20}, val = {best_hit20_roc}')
-    print(f'best hit@50 epoch = {best_hit50_ep}, hit@50 = {best_hit50}, val = {best_hit50_roc}')
+    # print(f'best hit@50 epoch = {best_hit50_ep}, hit@50 = {best_hit50}, val = {best_hit50_roc}')
     test_roc, test_ap, test_hit = get_scores(test_edges, test_edges_false, A_pred.data.cpu(), adj_orig)
     print(f'End of training!\ntest_roc={test_roc:.5f}, test_ap={test_ap:.5f}')
-    print(f'Hit@K for test: 10={test_hit[0]}, 20={test_hit[1]}, 50={test_hit[2]}')
+    print(f'Hit@K for test: 1={test_hit[0]}, 3={test_hit[1]}, 10={test_hit[2]}, 20={test_hit[3]}')
     
     return encoder.Z.clone().detach(), roc_history, modification_ratio_history
 
@@ -420,24 +427,33 @@ def get_scores(edges_pos, edges_neg, adj_rec, adj_orig):
     # Predict on test set of edges
     preds = []
     pos = []
+    
+    pos_for_hitsk = []
+    neg_for_hitsk = []
     for e in edges_pos:
         # print(e)
         # print(adj_rec[e[0], e[1]])
         # print(sigmoid(adj_rec[e[0], e[1]].item()))
         preds.append(adj_rec[e[0], e[1]].item())
         pos.append(adj_orig[e[0], e[1]])
+        
+        
+        # pos_for_hitsk.append(adj_rec[e[0], e[1]].item())
+        
+        
     preds_neg = []
     neg = []
     for e in edges_neg:
         # preds_neg.append(sigmoid(adj_rec[e[0], e[1]].data))
         preds_neg.append(adj_rec[e[0], e[1]].item())
         neg.append(adj_orig[e[0], e[1]])
+        # neg_for_hitsk.append(adj_rec[e[0], e[1]].item())
     preds_all = np.hstack([preds, preds_neg])
     labels_all = np.hstack([np.ones(len(preds)), np.zeros(len(preds_neg))])
     roc_score = roc_auc_score(labels_all, preds_all)
     ap_score = average_precision_score(labels_all, preds_all)
     hitk = []
-    for k in [10,20,50]:
+    for k in [1,3,10,20]:
         hitk.append(eval_hits(torch.tensor(preds), torch.tensor(preds_neg),k))
     return roc_score, ap_score, hitk
 
@@ -452,10 +468,10 @@ def eval_hits(y_pred_pos, y_pred_neg, K):
     '''
 
     if len(y_pred_neg) < K:
-        log.warn(f'[WARNING]: hits@{K} defaulted to 1')
-        return {'hits@{}'.format(K): 1.0}
+        print(f'[WARNING]: hits@{K} defaulted to 1')
+        return 1.0 #{'hits@{}'.format(K): 1.0}
 
-    kth_score_in_negative_edges = torch.topk(y_pred_neg, K)[0][-1]
+    kth_score_in_negative_edges = torch.topk(y_pred_neg, K,largest=True)[0][-1]
     hitsK = float(torch.sum(y_pred_pos > kth_score_in_negative_edges).cpu()) / len(
         y_pred_pos
     )

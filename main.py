@@ -70,7 +70,7 @@ def main():
 if __name__ == '__main__':
     if args.logging == True:
         old_stdout = sys.stdout
-        log_file = open(f'log/{args.dataset_str}_{args.date}_{args.ver}_{args.idx}.log',"w")
+        log_file = open(f'log/{args.date}/{args.dataset_str}_{args.date}_{args.ver}_{args.idx}.log',"w")
         sys.stdout = log_file
         
         set_random_seed(args.seed)
