@@ -17,6 +17,7 @@ from torch_geometric.utils.convert import to_scipy_sparse_matrix
 from torch_geometric.utils import to_undirected, from_scipy_sparse_matrix,dense_to_sparse,is_undirected
 from torch_geometric.nn import Node2Vec
 import torch
+from ogb.linkproppred import PygLinkPropPredDataset
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def CalN2V(edge_index, dim, in_out_param):
@@ -88,7 +89,28 @@ def load_data(dataset):
         idx_train = list(range(len(y)))
         idx_val = list(range(len(y), len(y)+500))
         idx_test = test_idx_range.tolist()
-    
+    elif dataset in ['ogbl-ddi','ogbl-collab','ogbl-ppa','ogbl-citation2']:
+        ogbdataset = PygLinkPropPredDataset(name = dataset) 
+        # split_edge = dataset.get_edge_split()
+        # train_edge, valid_edge, test_edge = split_edge["train"], split_edge["valid"], split_edge["test"]
+        split_idx = ogbdataset.get_edge_split()
+        graph = ogbdataset[0]
+        if(dataset=='ogbl-ddi'):
+            features = sp.csr_matrix(torch.ones((graph['num_nodes'], 1)))
+        else:    
+            features = sp.csr_matrix(graph['x'])
+        # adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
+        row = graph['edge_index'][0]
+        col = graph['edge_index'][1]
+        data = np.ones(len(row))  # 假設每個邊的權重都是 1
+        adj = sp.coo_matrix((data, (row, col)), shape=(graph['num_nodes'], graph['num_nodes']))
+        # adj = sp.coo_matrix((graph['edge_index'][1], graph['edge_index'][0]), shape=(graph['num_nodes'], graph['num_nodes']))
+        labels = None #graph['node_label']
+
+        # 重新排列索引
+        idx_train = split_idx['train']
+        idx_val = split_idx['valid']
+        idx_test = split_idx['test']       
     elif dataset in ['chameleon', 'crocodile', 'squirrel']:
         if dataset in ['crocodile', 'squirrel']:
             data = WikipediaNetwork('data/', dataset)[0]
