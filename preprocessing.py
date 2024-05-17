@@ -33,7 +33,7 @@ def preprocess_features(features):
     features = r_mat_inv.dot(features)
     return features.todense(), sparse_to_tuple(features)
 
-def mask_test_edges(adj):
+def mask_test_edges(adj, dataset_str):
     # Function to build test set with 10% positive links
 
     # Remove diagonal elements
@@ -56,6 +56,7 @@ def mask_test_edges(adj):
     test_edges = edges[test_edge_idx]
     val_edges = edges[val_edge_idx]
     train_edges = np.delete(edges, np.hstack([test_edge_idx, val_edge_idx]), axis=0)
+    
     
     def ismember(a, b, tol=5):
         rows_close = np.all(np.round(a - b[:, None], tol) == 0, axis=-1)
@@ -102,6 +103,43 @@ def mask_test_edges(adj):
     # assert ~ismember(val_edges, train_edges)
     # assert ~ismember(test_edges, train_edges)
     # assert ~ismember(val_edges, test_edges)
+
+    data = np.ones(train_edges.shape[0])
+
+    # Re-build adj matrix
+    adj_train = sp.csr_matrix((data, (train_edges[:, 0], train_edges[:, 1])), shape=adj.shape)
+    adj_train = adj_train + adj_train.T
+
+    # NOTE: these edge lists only contain single direction of edge!
+    return adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false
+
+def mask_test_edges_ogbl(adj, dataset_str, idx_train, idx_val, idx_test):
+    # Function to build test set with 10% positive links
+
+    # Remove diagonal elements
+    adj = adj - sp.dia_matrix((adj.diagonal()[np.newaxis, :], [0]), shape=adj.shape)
+    adj.eliminate_zeros()
+    # Check that diag is zero:
+    assert np.diag(adj.todense()).sum() == 0
+
+    adj_triu = sp.triu(adj)
+    adj_tuple = sparse_to_tuple(adj_triu)
+    edges = adj_tuple[0]
+    edges_all = sparse_to_tuple(adj)[0]
+
+    train_edges = idx_train['edge']
+    val_edges = idx_val['edge']
+    val_edges_false = idx_val['edge_neg']
+    test_edges = idx_test['edge']
+    test_edges_false = idx_test['edge_neg']
+    
+    all_edge_idx = list(range(edges.shape[0]))
+    
+    
+    def ismember(a, b, tol=5):
+        rows_close = np.all(np.round(a - b[:, None], tol) == 0, axis=-1)
+        return np.any(rows_close)
+    
 
     data = np.ones(train_edges.shape[0])
 

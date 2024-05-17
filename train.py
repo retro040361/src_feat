@@ -181,7 +181,12 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]), shape=adj_orig.shape)
     adj_orig.eliminate_zeros()
 
-    adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj)
+    if dataset_str in ['ogbl-ddi']:
+        print("ogbl-ddi!!")
+        adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges_ogbl(adj,dataset_str, idx_train, idx_val, idx_test)
+    else:
+        adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj,dataset_str)
+         
     adj = adj_train
     train_mask = torch.ones(num_nodes*num_nodes, dtype = torch.bool, requires_grad = False).to(device)
     for r, c in val_edges:
@@ -193,7 +198,7 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     # APPNP
     edge_index = from_scipy_sparse_matrix(adj)[0].to(device)
     ##
-    if dataset_str in ['USAir', 'PB', 'Celegans', 'Power', 'Router', 'Ecoli', 'Yeast', 'NS']:
+    if dataset_str in ['USAir', 'PB', 'Celegans', 'Power', 'Router', 'Ecoli', 'Yeast', 'NS','obgl_ddi']:
         print('Training Data Without Init Attr ...')
         # n2v
         features = CalN2V(edge_index, 16, 1)
@@ -294,6 +299,8 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
 
     best_acc = 0.0; best_roc = 0.0; best_ap = 0.0
     best_hit1 = 0.0;best_hit3 = 0.0;best_hit10 = 0.0; best_hit20 = 0.0; best_hit50 = 0.0; 
+    best_hit1_roc = 0.0;best_hit3_roc = 0.0;best_hit10_roc = 0.0; best_hit20_roc = 0.0; best_hit50_roc = 0.0; 
+    best_hit1_ep = 0.0;best_hit3_ep = 0.0;best_hit10_ep = 0.0; best_hit20_ep = 0.0; best_hit50_ep = 0.0; 
     modification_ratio_history = []
     roc_history = []
     # train model
