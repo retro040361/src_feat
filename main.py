@@ -51,7 +51,7 @@ def main():
 
     adj, features, labels, idx_train, idx_val, idx_test = load_data(args.dataset_str)
 
-    Z, roc_history, modification_ratio_history = train_encoder(args.dataset_str, device, args.epochs, adj, features, args.hidden1, args.hidden2, args.dropout, args.lr, args.weight_decay, 
+    Z, roc_history, modification_ratio_history, edge_index = train_encoder(args.dataset_str, device, args.epochs, adj, features, args.hidden1, args.hidden2, args.dropout, args.lr, args.weight_decay, 
                             args.aug_graph_weight, args.aug_ratio, args.aug_bound, args.alpha, args.beta, args.gamma, args.delta, args.temperature,
                             labels, idx_train, idx_val, idx_test, args.ver)
     

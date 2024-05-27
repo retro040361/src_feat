@@ -96,14 +96,19 @@ def load_data(dataset):
         split_idx = ogbdataset.get_edge_split()
         graph = ogbdataset[0]
         if(dataset=='ogbl-ddi'):
-            features = sp.csr_matrix(torch.ones((graph['num_nodes'], 1)))
+            # features = sp.csr_matrix(torch.ones((graph['num_nodes'], 1)))
+            features = sp.lil_matrix(torch.ones((graph['num_nodes'], 1)))
         else:    
-            features = sp.csr_matrix(graph['x'])
+            # features = sp.csr_matrix(graph['x'])
+            features = sp.lil_matrix(graph['x'])
+        print(f"Number node:{graph['num_nodes']}")
         # adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
         row = graph['edge_index'][0]
         col = graph['edge_index'][1]
-        data = np.ones(len(row))  # 假設每個邊的權重都是 1
-        adj = sp.coo_matrix((data, (row, col)), shape=(graph['num_nodes'], graph['num_nodes']))
+        # data = np.ones(len(row))  # 假設每個邊的權重都是 1
+        # adj = to_scipy_sparse_matrix(split_idx['train']['edge'].t(), num_nodes=graph.num_nodes)
+        adj = to_scipy_sparse_matrix(graph.edge_index, num_nodes=graph.num_nodes)
+        # adj = sp.coo_matrix((data, (row, col)), shape=(graph['num_nodes'], graph['num_nodes']))
         # adj = sp.coo_matrix((graph['edge_index'][1], graph['edge_index'][0]), shape=(graph['num_nodes'], graph['num_nodes']))
         labels = None #graph['node_label']
 

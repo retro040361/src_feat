@@ -19,6 +19,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.multiclass import OneVsRestClassifier
 import matplotlib.pyplot as plt
 
+from ogb.linkproppred import Evaluator
 from tqdm import tqdm
 from preprocessing import *
 from model import VGNAE_ENCODER, VGAE_ENCODER, dot_product_decode, MLP, LogReg
@@ -184,8 +185,10 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     if dataset_str in ['ogbl-ddi']:
         print("ogbl-ddi!!")
         adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges_ogbl(adj,dataset_str, idx_train, idx_val, idx_test)
+        print(f"{type(adj_train)}, {type(train_edges)}, {type(val_edges)}, {type(val_edges_false)}, {type(test_edges)}, {type(test_edges_false)}")
     else:
         adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj,dataset_str)
+        print(f"{type(adj_train)}, {type(train_edges)}, {type(val_edges)}, {type(val_edges_false)}, {type(test_edges)}, {type(test_edges_false)}")
          
     adj = adj_train
     train_mask = torch.ones(num_nodes*num_nodes, dtype = torch.bool, requires_grad = False).to(device)
@@ -198,7 +201,7 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     # APPNP
     edge_index = from_scipy_sparse_matrix(adj)[0].to(device)
     ##
-    if dataset_str in ['USAir', 'PB', 'Celegans', 'Power', 'Router', 'Ecoli', 'Yeast', 'NS','obgl_ddi']:
+    if dataset_str in ['USAir', 'PB', 'Celegans', 'Power', 'Router', 'Ecoli', 'Yeast', 'NS','obgl-ddi']:
         print('Training Data Without Init Attr ...')
         # n2v
         features = CalN2V(edge_index, 16, 1)
@@ -318,8 +321,8 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
                 # adjusted_weight_tensor = weight_tensor * torch.abs(A_pred.view(-1)[train_mask] - adj_label.to_dense().view(-1)[train_mask]).detach()
                 # recon_loss = loss_function(A_pred, adj_label, encoder.mean, encoder.logstd, norm, adjusted_weight_tensor, alpha, beta, train_mask)
         recon_loss = loss_function(A_pred, adj_label, encoder.mean, encoder.logstd, norm, weight_tensor, alpha, beta, train_mask)
-        #ori_intra_CL = intra_view_CL_loss(device, Z, adj_label, gamma, temperature)
-        loss = recon_loss #+ ori_intra_CL
+        ori_intra_CL = intra_view_CL_loss(device, Z, adj_label, gamma, temperature)
+        loss = recon_loss + ori_intra_CL
         
         # Generate K graphs
         if epoch % 10 == 0:
@@ -334,6 +337,9 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
                 g, modification_ratio = Graph_Modify_Constraint(Z.detach(), adj_label.to_dense(), int(k), aug_bound)
             if(ver=="thm_exp"):
                 g, modification_ratio = Graph_Modify_Constraint_exp(Z.detach(), adj_label.to_dense(), int(k), aug_bound)
+            if(ver=="random"):
+                g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
+                
             ## random modification
             # g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
                 
@@ -349,10 +355,10 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
         bias_Z = encoder(features, aug_edge_index)
 
         # Overall losses
-        #loss += inter_view_CL_loss(device, hidden_repr, encoder.Z.detach(), adj_label, delta, temperature)
+        loss += inter_view_CL_loss(device, hidden_repr, encoder.Z.detach(), adj_label, delta, temperature)
         aug_loss = loss_function(dot_product_decode(bias_Z), adj_label, encoder.mean, encoder.logstd, norm, weight_tensor, alpha, beta, train_mask) # aug_loss = loss_function(dot_product_decode(bias_Z), aug_adj_labels[i], encoder.mean, encoder.logstd, aug_norms[i], aug_weight_tensors[i], alpha, beta, train_mask)
-        #intra_CL = intra_view_CL_loss(device, bias_Z, adj_label, gamma, temperature)
-        aug_losses = aug_loss # + intra_CL
+        intra_CL = intra_view_CL_loss(device, bias_Z, adj_label, gamma, temperature)
+        aug_losses = aug_loss  + intra_CL
         loss += aug_losses * aug_graph_weight
         #print(f'aug_loss: {aug_loss}, intra_CL: {intra_CL}')
 
@@ -374,9 +380,10 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
             Z = encoder(features, edge_index) # Z = encoder(features, adj_norm)
             A_pred = dot_product_decode(Z)
         # A_pred = train_decoder(device, encoder.Z.clone().detach(), adj_label, weight_tensor, norm, train_mask)
+        print(A_pred.shape)
         train_acc = get_acc(A_pred.data.cpu(), adj_label.data.cpu())
-        val_roc, val_ap, val_hit = get_scores(val_edges, val_edges_false, A_pred.data.cpu(), adj_orig)
-        test_roc, test_ap, test_hit = get_scores(test_edges, test_edges_false, A_pred.data.cpu(), adj_orig)
+        val_roc, val_ap, val_hit = get_scores(dataset_str, val_edges, val_edges_false, A_pred.data.cpu(), adj_orig)
+        test_roc, test_ap, test_hit = get_scores(dataset_str, test_edges, test_edges_false, A_pred.data.cpu(), adj_orig)
         roc_history.append(test_roc)
         # val_acc, test_acc = logist_regressor_classification(device = device, Z = encoder.Z.clone().detach(), labels = labels, idx_train = idx_train, idx_val = idx_val, idx_test = idx_test)
         print(f'Epoch: {epoch + 1}, train_loss= {loss.item():.4f}, train_acc= {train_acc:.4f}, val_roc= {val_roc:.4f}, val_ap= {val_ap:.4f}, test_roc= {test_roc:.4f}, test_ap= {test_ap:.4f}, time= {time.time() - t:.4f}')
@@ -420,15 +427,15 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     print(f'best hit@10 epoch = {best_hit10_ep}, hit@10 = {best_hit10}, val = {best_hit10_roc}')
     print(f'best hit@20 epoch = {best_hit20_ep}, hit@20 = {best_hit20}, val = {best_hit20_roc}')
     # print(f'best hit@50 epoch = {best_hit50_ep}, hit@50 = {best_hit50}, val = {best_hit50_roc}')
-    test_roc, test_ap, test_hit = get_scores(test_edges, test_edges_false, A_pred.data.cpu(), adj_orig)
+    test_roc, test_ap, test_hit = get_scores(dataset_str,test_edges, test_edges_false, A_pred.data.cpu(), adj_orig)
     print(f'End of training!\ntest_roc={test_roc:.5f}, test_ap={test_ap:.5f}')
     print(f'Hit@K for test: 1={test_hit[0]}, 3={test_hit[1]}, 10={test_hit[2]}, 20={test_hit[3]}')
     
-    return encoder.Z.clone().detach(), roc_history, modification_ratio_history
+    return encoder.Z.clone().detach(), roc_history, modification_ratio_history, edge_index
 
 
 
-def get_scores(edges_pos, edges_neg, adj_rec, adj_orig):
+def get_scores(dataset_str,edges_pos, edges_neg, adj_rec, adj_orig):
     def sigmoid(x):
         return 1 / (1 + np.exp(-x))
     # Predict on test set of edges
@@ -460,8 +467,15 @@ def get_scores(edges_pos, edges_neg, adj_rec, adj_orig):
     roc_score = roc_auc_score(labels_all, preds_all)
     ap_score = average_precision_score(labels_all, preds_all)
     hitk = []
+    # evaluator = Evaluator(name=dataset_str)
     for k in [1,3,10,20]:
         hitk.append(eval_hits(torch.tensor(preds), torch.tensor(preds_neg),k))
+        # evaluator.K = k
+        # hits = evaluator.eval({
+            # 'y_pred_pos': torch.tensor(preds),
+            # 'y_pred_neg': torch.tensor(preds_neg),
+        # })[f'hits@{k}']
+        # hitk.append(hits)
     return roc_score, ap_score, hitk
 
 def eval_hits(y_pred_pos, y_pred_neg, K):

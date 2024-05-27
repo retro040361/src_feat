@@ -127,11 +127,11 @@ def mask_test_edges_ogbl(adj, dataset_str, idx_train, idx_val, idx_test):
     edges = adj_tuple[0]
     edges_all = sparse_to_tuple(adj)[0]
 
-    train_edges = idx_train['edge']
-    val_edges = idx_val['edge']
-    val_edges_false = idx_val['edge_neg']
-    test_edges = idx_test['edge']
-    test_edges_false = idx_test['edge_neg']
+    train_edges = idx_train['edge'].cpu().detach().numpy()
+    val_edges = idx_val['edge'].cpu().detach().numpy()
+    val_edges_false = idx_val['edge_neg'].cpu().detach().tolist()
+    test_edges = idx_test['edge'].cpu().detach().numpy()
+    test_edges_false = idx_test['edge_neg'].cpu().detach().tolist()
     
     all_edge_idx = list(range(edges.shape[0]))
     
@@ -141,7 +141,7 @@ def mask_test_edges_ogbl(adj, dataset_str, idx_train, idx_val, idx_test):
         return np.any(rows_close)
     
 
-    data = np.ones(train_edges.shape[0])
+    data = np.ones(len(train_edges))
 
     # Re-build adj matrix
     adj_train = sp.csr_matrix((data, (train_edges[:, 0], train_edges[:, 1])), shape=adj.shape)
