@@ -26,7 +26,7 @@ encoder = Encoder(dataset.num_features, out_channels).to(device)
 model = VGAE(encoder).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-def train():
+def train(model, optimizer, data, device,split_edge):
     model.train()
     optimizer.zero_grad()
     z = model.encode(data.x.to(device), split_edge['train']['edge'].to(device))
@@ -54,6 +54,7 @@ def test():
         'y_true_pos': torch.ones(split_edge['test']['edge'].size(0)),
         'y_true_neg': torch.zeros(split_edge['test']['edge_neg'].size(0)),
     })
+
 
 results = test()
 print('Hits@20:', results['hits@20'])
