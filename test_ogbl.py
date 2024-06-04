@@ -1,6 +1,7 @@
 import torch
 from torch_geometric.nn import VGAE, GCNConv
 from ogb.linkproppred import PygLinkPropPredDataset, Evaluator
+import scipy.sparse as sp
 
 class Encoder(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -16,9 +17,10 @@ class Encoder(torch.nn.Module):
 # Load data and evaluator
 dataset = PygLinkPropPredDataset(name='ogbl-ddi', root='dataset/')
 split_edge = dataset.get_edge_split()
+graph=dataset[0]
 evaluator = Evaluator(name='ogbl-ddi')
 data = dataset[0]
-
+data.x = torch.ones((graph['num_nodes'], 1))
 # Model and optimizer
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 out_channels = 32
@@ -29,6 +31,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 def train(model, optimizer, data, device,split_edge):
     model.train()
     optimizer.zero_grad()
+    print(split_edge['train']['edge'])
     z = model.encode(data.x.to(device), split_edge['train']['edge'].to(device))
     loss = model.recon_loss(z, split_edge['train']['edge'].to(device))
     loss += (1 / data.num_nodes) * model.kl_loss()
@@ -38,13 +41,13 @@ def train(model, optimizer, data, device,split_edge):
 
 # Training loop
 for epoch in range(1, 201):
-    loss = train()
+    loss = train(model, optimizer, data, device, split_edge)
     if epoch % 10 == 0:
         print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}')
 
 # Evaluate model
 @torch.no_grad()
-def test():
+def test(model, data, device, split_edge, evaluator):
     model.eval()
     z = model.encode(data.x.to(device), split_edge['train']['edge'].to(device))
     link_probs = model.decoder.forward_all(z)
@@ -55,6 +58,7 @@ def test():
         'y_true_neg': torch.zeros(split_edge['test']['edge_neg'].size(0)),
     })
 
-
-results = test()
+# train(model, optimizer, data, device, split_edge)
+# test(model, data, device, split_edge, evaluator)
+results = test(model, data, device, split_edge, evaluator)
 print('Hits@20:', results['hits@20'])

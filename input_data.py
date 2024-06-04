@@ -100,7 +100,7 @@ def load_data(dataset):
             features = sp.lil_matrix(torch.ones((graph['num_nodes'], 1)))
         else:    
             # features = sp.csr_matrix(graph['x'])
-            features = sp.lil_matrix(graph['x'])
+            features = sp.lil_matrix(graph['x'].numpy())
         print(f"Number node:{graph['num_nodes']}")
         # adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
         row = graph['edge_index'][0]

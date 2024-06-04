@@ -7,7 +7,8 @@ Their preprocessing source was used as-is.
 '''
 import numpy as np
 import scipy.sparse as sp
-
+from torch_geometric.utils.convert import to_scipy_sparse_matrix
+import torch
 def sparse_to_tuple(sparse_mx):
     if not sp.isspmatrix_coo(sparse_mx):
         sparse_mx = sparse_mx.tocoo()
@@ -141,11 +142,11 @@ def mask_test_edges_ogbl(adj, dataset_str, idx_train, idx_val, idx_test):
         return np.any(rows_close)
     
 
-    data = np.ones(len(train_edges))
+    # data = np.ones(len(train_edges))
 
     # Re-build adj matrix
-    adj_train = sp.csr_matrix((data, (train_edges[:, 0], train_edges[:, 1])), shape=adj.shape)
-    adj_train = adj_train + adj_train.T
-
+    # adj_train = sp.csr_matrix((data, (train_edges[:, 0], train_edges[:, 1])), shape=adj.shape)
+    # adj_train = adj_train + adj_train.T
+    adj_train = to_scipy_sparse_matrix(torch.tensor(train_edges).t())
     # NOTE: these edge lists only contain single direction of edge!
     return adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false

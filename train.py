@@ -182,8 +182,8 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]), shape=adj_orig.shape)
     adj_orig.eliminate_zeros()
 
-    if dataset_str in ['ogbl-ddi']:
-        print("ogbl-ddi!!")
+    if dataset_str in ['ogbl-ddi','ogbl-collab']:
+        print("ogbl!!")
         adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges_ogbl(adj,dataset_str, idx_train, idx_val, idx_test)
         print(f"{type(adj_train)}, {type(train_edges)}, {type(val_edges)}, {type(val_edges_false)}, {type(test_edges)}, {type(test_edges_false)}")
     else:
@@ -382,8 +382,8 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
         # A_pred = train_decoder(device, encoder.Z.clone().detach(), adj_label, weight_tensor, norm, train_mask)
         print(A_pred.shape)
         train_acc = get_acc(A_pred.data.cpu(), adj_label.data.cpu())
-        val_roc, val_ap, val_hit = get_scores(dataset_str, val_edges, val_edges_false, A_pred.data.cpu(), adj_orig)
-        test_roc, test_ap, test_hit = get_scores(dataset_str, test_edges, test_edges_false, A_pred.data.cpu(), adj_orig)
+        val_roc, val_ap, val_hit = get_scores(dataset_str, val_edges, val_edges_false, A_pred.data.cpu().numpy(), adj_orig)
+        test_roc, test_ap, test_hit = get_scores(dataset_str, test_edges, test_edges_false, A_pred.data.cpu().numpy(), adj_orig)
         roc_history.append(test_roc)
         # val_acc, test_acc = logist_regressor_classification(device = device, Z = encoder.Z.clone().detach(), labels = labels, idx_train = idx_train, idx_val = idx_val, idx_test = idx_test)
         print(f'Epoch: {epoch + 1}, train_loss= {loss.item():.4f}, train_acc= {train_acc:.4f}, val_roc= {val_roc:.4f}, val_ap= {val_ap:.4f}, test_roc= {test_roc:.4f}, test_ap= {test_ap:.4f}, time= {time.time() - t:.4f}')
