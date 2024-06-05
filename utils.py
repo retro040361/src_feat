@@ -291,14 +291,28 @@ def Graph_Modify_Constraint_local(bias_Z, original_graph, k, bound, common_neigh
     #             else:
     #                 constrainted_new_graph[i, j] = 0
 
-    link_mask = (difference.cpu() < 0.5) & (common_neighbors_count > cn_threshold) 
-    unlink_mask = (difference.cpu() < 0.5) & (common_neighbors_count <= cn_threshold) 
+    link_mask = (difference < bound) & torch.tensor((common_neighbors_count > cn_threshold)).to(difference.device) & (constrainted_new_graph == 0)
+    unlink_mask = (difference < bound) & torch.tensor((common_neighbors_count <= cn_threshold)).to(difference.device) & (constrainted_new_graph == 1) 
     link_mask = link_mask.type(torch.bool)
     unlink_mask = unlink_mask.type(torch.bool)
-    constrainted_new_graph[link_mask] = 1
-    constrainted_new_graph[unlink_mask] = 0
 
-    return constrainted_new_graph, link_mask.shape[0] / constrainted_new_graph.flatten().shape[0]
+    link_indices = link_mask.nonzero(as_tuple=False)
+    unlink_indices = unlink_mask.nonzero(as_tuple=False)
+    total_possible_changes = link_indices.size(0) + unlink_indices.size(0)
+    if total_possible_changes < k:
+        print("total possible changes ")
+    
+    k_link = min(min(link_indices.size(0),unlink_indices.size(0),), k // 2)
+    k_unlink = k - k_link
+    chosen_link_indices = link_indices[torch.randperm(link_indices.size(0))[:k_link]]
+    chosen_unlink_indices = unlink_indices[torch.randperm(unlink_indices.size(0))[:k_unlink]]
+    chosen_indices = torch.cat([chosen_link_indices, chosen_unlink_indices])
+    constrainted_new_graph[chosen_indices] = 1 - constrainted_new_graph[chosen_indices]
+    # constrainted_new_graph[link_mask] = 1
+    # constrainted_new_graph[unlink_mask] = 0
+
+    return constrainted_new_graph, chosen_indices.shape[0] / constrainted_new_graph.flatten().shape[0]
+
 def Graph_Modify_Constraint_exp(bias_Z, original_graph, k, bound):
     print("Thm experiment")
     aug_graph = dot_product_decode(bias_Z)

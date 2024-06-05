@@ -7,11 +7,12 @@ if cwd.split('/')[-1] == "src":
     cwd=cwd[:-3]
 
 # 讀取.log文件
-title = "amazon_photo_0514_thm_exp"
+date = "0527"
+title = "citeseer_0527_origin"
 all_result = []
 for i in range(1,6):
     result = []
-    with open(f'{cwd}/log/{title}_{i}.log', 'r') as f:
+    with open(f'{cwd}/log/{date}/{title}_{i}.log', 'r') as f:
         log_data = f.read()
 
     # 使用正則表達式來抓取需要的資料
@@ -36,8 +37,9 @@ for i in range(1,6):
         # print(f"Hit@{hit_number}: Epoch {epoch}, hit@{hit_number} {hit_value}, val {val}")
     all_result.append(result)
     
-df = pd.DataFrame(all_result,columns=["epoch","test auc","epoch","hit@10","auc","epoch","hit@20","auc","epoch","hit@50","auc"])
+df = pd.DataFrame(all_result,columns=["epoch","test auc","epoch","hit@1","auc","epoch","hit@3","auc","epoch","hit@10","auc","epoch","hit@20","auc"])
 df=df.astype(float)
 column_means = df.mean()
 df.loc[len(df)] = column_means
-df.to_csv(f"{cwd}/{title}.csv")
+
+df.to_csv(f"{cwd}/{title}_{date}.csv")

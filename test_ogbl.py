@@ -2,7 +2,8 @@ import torch
 from torch_geometric.nn import VGAE, GCNConv
 from ogb.linkproppred import PygLinkPropPredDataset, Evaluator
 import scipy.sparse as sp
-
+from tqdm import tqdm
+import numpy as np
 class Encoder(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Encoder, self).__init__()
@@ -31,34 +32,49 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 def train(model, optimizer, data, device,split_edge):
     model.train()
     optimizer.zero_grad()
-    print(split_edge['train']['edge'])
-    z = model.encode(data.x.to(device), split_edge['train']['edge'].to(device))
-    loss = model.recon_loss(z, split_edge['train']['edge'].to(device))
+    # print(split_edge['train']['edge'])
+    z = model.encode(data.x.to(device), split_edge['train']['edge'].t().to(device))
+    loss = model.recon_loss(z, split_edge['train']['edge'].t().to(device))
     loss += (1 / data.num_nodes) * model.kl_loss()
     loss.backward()
     optimizer.step()
     return loss.item()
 
-# Training loop
-for epoch in range(1, 201):
-    loss = train(model, optimizer, data, device, split_edge)
-    if epoch % 10 == 0:
-        print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}')
-
 # Evaluate model
 @torch.no_grad()
 def test(model, data, device, split_edge, evaluator):
     model.eval()
-    z = model.encode(data.x.to(device), split_edge['train']['edge'].to(device))
+    z = model.encode(data.x.to(device), split_edge['train']['edge'].t().to(device))
     link_probs = model.decoder.forward_all(z)
-    return evaluator.eval({
-        'y_pred_pos': link_probs[split_edge['test']['edge'].t()],
-        'y_pred_neg': link_probs[split_edge['test']['edge_neg'].t()],
-        'y_true_pos': torch.ones(split_edge['test']['edge'].size(0)),
-        'y_true_neg': torch.zeros(split_edge['test']['edge_neg'].size(0)),
+    y_pred_pos = []
+    y_pred_neg = []
+    for e in split_edge['test']['edge']:
+        y_pred_pos.append(link_probs[e[0],e[1]].item())
+    for e in split_edge['test']['edge_neg']:
+        y_pred_neg.append(link_probs[e[0],e[1]].item())
+    evaluator.K = 20
+    results = evaluator.eval({
+        'y_pred_pos': np.array(y_pred_pos),
+        'y_pred_neg': np.array(y_pred_neg),
     })
+    # print(results)
+    return results['hits@20']
+
+
+best_hit = 0
+# Training loop
+for epoch in tqdm(range(1, 500)):
+    loss = train(model, optimizer, data, device, split_edge)
+    if epoch % 10 == 0:
+        results = test(model, data, device, split_edge, evaluator)
+        best_hit = max(best_hit, results)    
+        print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}')
+        
+
+
 
 # train(model, optimizer, data, device, split_edge)
 # test(model, data, device, split_edge, evaluator)
 results = test(model, data, device, split_edge, evaluator)
-print('Hits@20:', results['hits@20'])
+print('Best Hits@20:', best_hit)
+print('Last Hits@20:', results)
