@@ -7,12 +7,13 @@ if cwd.split('/')[-1] == "src":
     cwd=cwd[:-3]
 
 # 讀取.log文件
-date = "0527"
-title = "citeseer_0527_origin"
+date = "0605"
+subfolder = "bound"
+title = "cora_local_b0.5"
 all_result = []
-for i in range(1,6):
+for i in range(1,4):
     result = []
-    with open(f'{cwd}/log/{date}/{title}_{i}.log', 'r') as f:
+    with open(f'{cwd}/log/{date}/{subfolder}/{title}_{i}.log', 'r') as f:
         log_data = f.read()
 
     # 使用正則表達式來抓取需要的資料
@@ -42,4 +43,4 @@ df=df.astype(float)
 column_means = df.mean()
 df.loc[len(df)] = column_means
 
-df.to_csv(f"{cwd}/{title}_{date}.csv")
+df.to_csv(f"{cwd}/avg_log/{title}_{date}.csv")

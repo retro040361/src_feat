@@ -375,7 +375,8 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
             # g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
                 
             aug_edge_index = g.to_sparse().indices()
-            
+            print(edge_index.shape)
+            print(aug_edge_index.shape)
             # aug_edge_index, modification_ratio = generate_augmented_views(device, data_augmenter, data_augmenter_optimizer, encoder.Z.clone().detach(), adj_label, encoder.mean.clone().detach(), encoder.logstd.clone().detach(), train_mask, norm, weight_tensor, alpha, beta, gamma, temperature)
             # aug_edge_index, modification_ratio = generate_augmented_views(device, data_augmenter, data_augmenter_optimizer, hidden_repr.detach(), features, adj_norm, adj_label, train_mask, norm, weight_tensor, alpha, beta, gamma, temperature)
             ###
