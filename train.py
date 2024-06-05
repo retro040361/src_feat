@@ -24,7 +24,8 @@ from tqdm import tqdm
 from preprocessing import *
 from model import VGNAE_ENCODER, VGAE_ENCODER, dot_product_decode, MLP, LogReg
 from loss import loss_function, inter_view_CL_loss, intra_view_CL_loss, Cluster
-from utils import Visualize, Graph_Modify_Constraint, draw_adjacency_matrix_edge_weight_distribution, aug_random_edge, Graph_Modify_Constraint_exp
+# from utils import Visualize, Graph_Modify_Constraint, draw_adjacency_matrix_edge_weight_distribution, aug_random_edge, Graph_Modify_Constraint_exp
+from utils import *
 from input_data import CalN2V
 
 # TODO: maximize variance while minimize difference in aug graph
@@ -318,6 +319,24 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
         neighbors[u].add(v)
         neighbors[v].add(u)
 
+    # common_neighbors_count = {}
+    common_neighbors_count = np.zeros((num_nodes, num_nodes), dtype=int)
+    total = 0
+    for u in range(num_nodes):
+        for v in range(u + 1, num_nodes):  
+            if u in neighbors and v in neighbors:
+                common_neighbors = neighbors[u].intersection(neighbors[v])
+                common_neighbors_count[u][v] = common_neighbors_count[v][u] = len(common_neighbors)
+                total += len(common_neighbors)
+    avg_cn_cnt = float(total) / (num_nodes*(num_nodes-1)/2)
+    # for u in neighbors.keys():
+    #     for v in neighbors.keys():
+    #         if u < v:  
+    #             if u in neighbors and v in neighbors:
+    #                 common_neighbors = neighbors[u].intersection(neighbors[v])               
+    #                 common_neighbors_count[(u, v)] = len(common_neighbors)
+    #                 common_neighbors_count[(v, u)] = len(common_neighbors)
+
     for epoch in tqdm(range(num_epoch)):
         t = time.time()
         encoder.train()
@@ -350,7 +369,8 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
                 g, modification_ratio = Graph_Modify_Constraint_exp(Z.detach(), adj_label.to_dense(), int(k), aug_bound)
             if(ver=="random"):
                 g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
-                
+            if(ver=="local"):
+                g, modification_ratio = Graph_Modify_Constraint_local(Z.detach(), adj_label.to_dense(), int(k), aug_bound, common_neighbors_count, avg_cn_cnt)
             ## random modification
             # g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
                 

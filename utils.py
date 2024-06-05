@@ -274,6 +274,31 @@ def Graph_Modify_Constraint(bias_Z, original_graph, k, bound):
     # print(type(constrainted_new_graph))
     return constrainted_new_graph, mask.shape[0] / constrainted_new_graph.flatten().shape[0]
 
+def Graph_Modify_Constraint_local(bias_Z, original_graph, k, bound, common_neighbors_count, cn_threshold):
+    print("local structure modified function")
+    aug_graph = dot_product_decode(bias_Z)
+    constrainted_new_graph = original_graph.clone()
+
+    # Modify/Flip the most accuate edges, error ranging from 0.0 ~ 0.2, bounded
+    difference = torch.abs(aug_graph - original_graph) # difference[difference < 0] = 1.0 ###
+    difference += torch.eye(difference.shape[0]).to(difference.device) * 2
+
+    # for i in range(difference.shape[0]):
+    #     for j in range(difference.shape[1]):
+    #         if difference[i, j] < 0.5:
+    #             if common_neighbors_count[i, j] > cn_threshold:
+    #                 constrainted_new_graph[i, j] = 1
+    #             else:
+    #                 constrainted_new_graph[i, j] = 0
+
+    link_mask = (difference.cpu() < 0.5) & (common_neighbors_count > cn_threshold) 
+    unlink_mask = (difference.cpu() < 0.5) & (common_neighbors_count <= cn_threshold) 
+    link_mask = link_mask.type(torch.bool)
+    unlink_mask = unlink_mask.type(torch.bool)
+    constrainted_new_graph[link_mask] = 1
+    constrainted_new_graph[unlink_mask] = 0
+
+    return constrainted_new_graph, link_mask.shape[0] / constrainted_new_graph.flatten().shape[0]
 def Graph_Modify_Constraint_exp(bias_Z, original_graph, k, bound):
     print("Thm experiment")
     aug_graph = dot_product_decode(bias_Z)
