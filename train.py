@@ -307,6 +307,17 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     modification_ratio_history = []
     roc_history = []
     # train model
+
+    neighbors = {}
+
+    for u, v in zip(edge_index[0], edge_index[1]):
+        if u not in neighbors:
+            neighbors[u] = set()
+        if v not in neighbors:
+            neighbors[v] = set()
+        neighbors[u].add(v)
+        neighbors[v].add(u)
+
     for epoch in tqdm(range(num_epoch)):
         t = time.time()
         encoder.train()
