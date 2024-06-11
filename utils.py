@@ -17,10 +17,11 @@ import scipy.stats as st
 import copy
 import random
 import scipy.sparse as sp
-
+import torch.nn.functional as F
 from torch_geometric.utils import degree, to_undirected
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 
+from torch_scatter import scatter_add
 def vMF_KDE(dataset_str, Z):
     def nomalize_embedding(Z, axis=-1, order=2):
         l2 = np.atleast_1d(np.linalg.norm(Z, order, axis))
@@ -255,6 +256,96 @@ def Visualize_with_edge(dataset_str, Z, labels, edge_index):
                     )
     fig.show()
 
+# def get_node_dist(graph):
+#     """
+#     Compute adjacent node distribution.
+#     a.k.a calculate adjacency matrix
+#     """
+#     row, col = graph.edges()[0], graph.edges()[1]
+#     num_node = graph.num_nodes()
+
+#     dist_list = []
+#     for i in range(num_node):
+#         dist = torch.zeros([num_node], dtype=torch.float32, device=graph.device)
+#         idx = row[(col==i)]
+#         dist[idx] = 1
+#         dist_list.append(dist)
+#     dist_list = torch.stack(dist_list, dim=0)
+#     return dist_list
+def get_sim(embeds1, embeds2):
+    # normalize embeddings across feature dimension
+    embeds1 = F.normalize(embeds1)
+    embeds2 = F.normalize(embeds2)
+    sim = torch.mm(embeds1, embeds2.t())
+    return sim
+
+def neighbor_sampling(src_idx, dst_idx, node_dist, sim, 
+                    max_degree, aug_degree):
+    phi = sim[src_idx, dst_idx].unsqueeze(dim=1)
+    phi = torch.clamp(phi, 0, 0.5)
+
+    # print('phi', phi)
+    mix_dist = node_dist[dst_idx]*phi + node_dist[src_idx]*(1-phi)
+
+    new_tgt = torch.multinomial(mix_dist + 1e-12, int(max_degree)).to(phi.device)
+    tgt_idx = torch.arange(max_degree).unsqueeze(dim=0).to(phi.device)
+
+    new_col = new_tgt[(tgt_idx - aug_degree.unsqueeze(dim=1) < 0)]
+    new_row = src_idx.repeat_interleave(aug_degree)
+    return new_row, new_col
+
+def degree_mask_edge(idx, sim, max_degree, node_degree, mask_prob):
+    aug_degree = (node_degree * (1- mask_prob)).long().to(sim.device)
+    sim_dist = sim[idx]
+
+    # _, new_tgt = th.topk(sim_dist + 1e-12, int(max_degree))
+    new_tgt = torch.multinomial(sim_dist + 1e-12, int(max_degree))
+    tgt_idx = torch.arange(max_degree).unsqueeze(dim=0).to(sim.device)
+
+    new_col = new_tgt[(tgt_idx - aug_degree.unsqueeze(dim=1) < 0)]
+    new_row = idx.repeat_interleave(aug_degree)
+    return new_row, new_col
+
+def degree_aug(bias_Z, adj_labl, degree,num_nodes, edge_mask_rate_1, threshold, epoch):
+    if(epoch < 200):
+        return adj_labl, 1
+    device = torch.device( 'cuda' if torch.cuda.is_available() else 'cpu' )
+    # aug_graph = dot_product_decode(bias_Z)
+    
+    max_degree = np.max(degree)
+    # adj_labl = get_node_dist(graph)   # adj_labl
+    src_idx = torch.LongTensor(np.argwhere(degree < threshold).flatten()).to(device)
+    rest_idx = torch.LongTensor(np.argwhere(degree >= threshold).flatten()).to(device)
+    rest_node_degree = degree[degree>=threshold]
+    
+    sim = get_sim(bias_Z, bias_Z)
+    sim = torch.clamp(sim, 0, 1)
+    sim = sim - torch.diag_embed(torch.diag(sim))
+    src_sim = sim[src_idx]
+    # dst_idx = th.argmax(src_sim, dim=-1).to(x.device)
+    dst_idx = torch.multinomial(src_sim + 1e-12, 1).flatten().to(device)
+
+    rest_node_degree = torch.LongTensor(rest_node_degree)
+    degree_dist = scatter_add(torch.ones(rest_node_degree.size()), rest_node_degree).to(device)
+    prob = degree_dist.unsqueeze(dim=0).repeat(src_idx.size(0), 1)
+    # aug_degree = th.argmax(prob, dim=-1).to(x.device)
+    aug_degree = torch.multinomial(prob, 1).flatten().to(device)
+
+    new_row_mix_1, new_col_mix_1 = neighbor_sampling(src_idx, dst_idx, adj_labl, sim, max_degree, aug_degree)
+    new_row_rest_1, new_col_rest_1 = degree_mask_edge(rest_idx, sim, max_degree, rest_node_degree, edge_mask_rate_1)
+    nsrc1 = torch.cat((new_row_mix_1, new_row_rest_1)).cpu()
+    ndst1 = torch.cat((new_col_mix_1, new_col_rest_1)).cpu()
+
+
+    # ng1 = dgl.graph((nsrc1, ndst1), num_nodes=num_nodes).to_simple().to(device)
+    # ng1 = ng1.add_self_loop()
+    
+    adj = torch.zeros((num_nodes, num_nodes), dtype=torch.float32)
+    adj[nsrc1, ndst1] = 1
+    adj += torch.eye(num_nodes, dtype=torch.float32)
+    adj = adj.to(device)
+    return adj, 1
+
 def Graph_Modify_Constraint(bias_Z, original_graph, k, bound):
     print("original function")
     aug_graph = dot_product_decode(bias_Z)
@@ -273,6 +364,56 @@ def Graph_Modify_Constraint(bias_Z, original_graph, k, bound):
     print(f'Modify percentage: {mask.shape[0] / constrainted_new_graph.flatten().shape[0]}')
     # print(type(constrainted_new_graph))
     return constrainted_new_graph, mask.shape[0] / constrainted_new_graph.flatten().shape[0]
+
+def Graph_Modify_Constraint_feat(bias_Z, original_graph, k, bound, feat_sim):
+    print("local structure modified function")
+    aug_graph = dot_product_decode(bias_Z)
+    constrainted_new_graph = original_graph.clone().to('cpu')
+
+    # Modify/Flip the most accuate edges, error ranging from 0.0 ~ 0.2, bounded
+    difference = torch.abs(aug_graph - original_graph) # difference[difference < 0] = 1.0 ###
+    difference += torch.eye(difference.shape[0]).to(difference.device) * 2
+    device = difference.device
+    difference = difference.to('cpu')
+    # for i in range(difference.shape[0]):
+    #     for j in range(difference.shape[1]):
+    #         if difference[i, j] < 0.5:
+    #             if common_neighbors_count[i, j] > cn_threshold:
+    #                 constrainted_new_graph[i, j] = 1
+    #             else:
+    #                 constrainted_new_graph[i, j] = 0
+    print(difference.device, constrainted_new_graph.device)
+    link_mask = (difference < bound) & (feat_sim > 0.6) & (constrainted_new_graph == 0)
+    unlink_mask = (difference < bound) & (feat_sim <= 0.6) & (constrainted_new_graph == 1) 
+    link_mask = link_mask.type(torch.bool)
+    unlink_mask = unlink_mask.type(torch.bool)
+
+    link_indices = link_mask.nonzero(as_tuple=False)
+    unlink_indices = unlink_mask.nonzero(as_tuple=False)
+    total_possible_changes = link_indices.size(0) + unlink_indices.size(0)
+    if total_possible_changes < k:
+        print(f"total possible changes less than k: {total_possible_changes}")
+        # print()
+    if(link_indices.size(0)==0):
+        print("indice shape = 0")
+        return constrainted_new_graph.to(device), 0
+    k_link = min(link_indices.size(0), k // 2)
+    k_unlink = min(unlink_indices.size(0), k // 2)
+    print(f"link indice size:{link_indices.size(0)}, unlink indice size:{unlink_indices.size(0)}")
+    
+    chosen_link_indices = link_indices[torch.randperm(link_indices.size(0))[:k_link]]
+    print(f"chosen link indice #:{k_link}")
+    print(chosen_link_indices[:5])
+    chosen_unlink_indices = unlink_indices[torch.randperm(unlink_indices.size(0))[:k_unlink]]
+    # chosen_indices = torch.cat([chosen_link_indices, chosen_unlink_indices])
+    # constrainted_new_graph[chosen_indices] = 1 - constrainted_new_graph[chosen_indices]
+    constrainted_new_graph[chosen_link_indices] = 1
+    constrainted_new_graph[chosen_unlink_indices] = 0
+
+    # constrainted_new_graph[link_mask] = 1
+    # constrainted_new_graph[unlink_mask] = 0
+
+    return constrainted_new_graph.to(device), chosen_link_indices.shape[0] / constrainted_new_graph.flatten().shape[0]
 
 def Graph_Modify_Constraint_local(bias_Z, original_graph, k, bound, common_neighbors_count, cn_threshold):
     print("local structure modified function")

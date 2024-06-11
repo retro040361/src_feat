@@ -28,6 +28,8 @@ from loss import loss_function, inter_view_CL_loss, intra_view_CL_loss, Cluster
 from utils import *
 from input_data import CalN2V
 
+from sklearn.metrics.pairwise import cosine_similarity
+
 # TODO: maximize variance while minimize difference in aug graph
 # -> maximize variance and bound the cosine similarity lower bound of aug_Z and Z
 # TODO: freeze data augmenter while (minimized avg reconstruction loss / min KL divergence of edge prob)
@@ -174,7 +176,7 @@ from input_data import CalN2V
 
 #     return aug_graph.to_sparse().indices(), 0.0
 
-def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden2, dropout, learning_rate, weight_decay, aug_graph_weight, aug_ratio, aug_bound, alpha, beta, gamma, delta, temperature, labels, idx_train, idx_val, idx_test, ver):
+def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden2, dropout, learning_rate, weight_decay, aug_graph_weight, aug_ratio, aug_bound, alpha, beta, gamma, delta, temperature, labels, idx_train, idx_val, idx_test, ver, degree_threshold):
     num_nodes = adj.shape[0]
     # nb_classes = labels.shape[1]
     
@@ -329,6 +331,8 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
                 common_neighbors_count[u][v] = common_neighbors_count[v][u] = len(common_neighbors)
                 total += len(common_neighbors)
     avg_cn_cnt = float(total) / (num_nodes*(num_nodes-1)/2)
+    
+    feat_sim = cosine_similarity(features.to_dense().cpu())
     # for u in neighbors.keys():
     #     for v in neighbors.keys():
     #         if u < v:  
@@ -336,7 +340,7 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     #                 common_neighbors = neighbors[u].intersection(neighbors[v])               
     #                 common_neighbors_count[(u, v)] = len(common_neighbors)
     #                 common_neighbors_count[(v, u)] = len(common_neighbors)
-
+    degree = np.array(adj_label.to_dense().cpu().sum(0)).squeeze()
     for epoch in tqdm(range(num_epoch)):
         t = time.time()
         encoder.train()
@@ -371,6 +375,11 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
                 g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
             if(ver=="local"):
                 g, modification_ratio = Graph_Modify_Constraint_local(Z.detach(), adj_label.to_dense(), int(k), aug_bound, common_neighbors_count, avg_cn_cnt)
+            if(ver=="feat"):
+                g, modification_ratio = Graph_Modify_Constraint_feat(Z.detach(), adj_label.to_dense(), int(k), aug_bound, feat_sim)
+            if(ver=="uncover"):
+                g, modification_ratio = degree_aug(Z.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)
+                
             ## random modification
             # g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
                 

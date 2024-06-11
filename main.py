@@ -29,8 +29,10 @@ parser.add_argument('--delta', type=float, default = 1.0, help='Inter Contrastiv
 parser.add_argument('--temperature', type=float, default = 1.0, help='Contrastive Temperature')
 parser.add_argument('--logging', type=bool, default = False, help='logging')
 parser.add_argument('--date', type=str, default = "0000", help='date')
-parser.add_argument('--ver', type=str, default = "origin", help='modified version') # [origin, thm_exp, ]
+parser.add_argument('--ver', type=str, default = "origin", help='modified version') # [origin, thm_exp, uncover]
 parser.add_argument('--idx', type=str, default = "1", help='index') # [1,2,3,4,5]
+parser.add_argument('--degree_threshold', type=int, default = 9, help='degree threshold') # [1,2,3,4,5]
+
 
 args = parser.parse_args()
 
@@ -53,7 +55,7 @@ def main():
 
     Z, roc_history, modification_ratio_history, edge_index = train_encoder(args.dataset_str, device, args.epochs, adj, features, args.hidden1, args.hidden2, args.dropout, args.lr, args.weight_decay, 
                             args.aug_graph_weight, args.aug_ratio, args.aug_bound, args.alpha, args.beta, args.gamma, args.delta, args.temperature,
-                            labels, idx_train, idx_val, idx_test, args.ver)
+                            labels, idx_train, idx_val, idx_test, args.ver, args.degree_threshold)
     
     Plot(args.dataset_str, roc_history, modification_ratio_history)
     gaussion_KDE(args.dataset_str, Z)
@@ -70,7 +72,7 @@ def main():
 if __name__ == '__main__':
     if args.logging == True:
         old_stdout = sys.stdout
-        log_file = open(f'log/{args.date}/{args.dataset_str}_{args.ver}_b{args.aug_bound}_{args.idx}.log',"w")
+        log_file = open(f'log/{args.date}/{args.dataset_str}_{args.ver}_r{args.aug_ratio}_d{args.degree_threshold}_{args.idx}.log',"w")
         sys.stdout = log_file
         
         set_random_seed(args.seed)
