@@ -176,7 +176,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 #     return aug_graph.to_sparse().indices(), 0.0
 
-def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden2, dropout, learning_rate, weight_decay, aug_graph_weight, aug_ratio, aug_bound, alpha, beta, gamma, delta, temperature, labels, idx_train, idx_val, idx_test, ver, degree_threshold):
+def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden2, dropout, learning_rate, weight_decay, aug_graph_weight, aug_ratio, aug_bound, alpha, beta, gamma, delta, temperature, labels, idx_train, idx_val, idx_test, ver, degree_threshold, loss_ver):
     num_nodes = adj.shape[0]
     # nb_classes = labels.shape[1]
     
@@ -355,7 +355,10 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
                 # adjusted_weight_tensor = weight_tensor * torch.abs(A_pred.view(-1)[train_mask] - adj_label.to_dense().view(-1)[train_mask]).detach()
                 # recon_loss = loss_function(A_pred, adj_label, encoder.mean, encoder.logstd, norm, adjusted_weight_tensor, alpha, beta, train_mask)
         recon_loss = loss_function(A_pred, adj_label, encoder.mean, encoder.logstd, norm, weight_tensor, alpha, beta, train_mask)
-        ori_intra_CL = intra_view_CL_loss(device, Z, adj_label, gamma, temperature)
+        if(loss_ver=="nei"):
+            ori_intra_CL = inter_view_CL_loss(device, Z, Z, adj_label, gamma, temperature)
+        else:
+            ori_intra_CL = intra_view_CL_loss(device, Z, adj_label, gamma, temperature)
         loss = recon_loss + ori_intra_CL
         
         # Generate K graphs
@@ -395,10 +398,13 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
         # Calcualte Augment View
         bias_Z = encoder(features, aug_edge_index)
 
-        # Overall losses
+        # Overall losses        
         loss += inter_view_CL_loss(device, hidden_repr, encoder.Z.detach(), adj_label, delta, temperature)
         aug_loss = loss_function(dot_product_decode(bias_Z), adj_label, encoder.mean, encoder.logstd, norm, weight_tensor, alpha, beta, train_mask) # aug_loss = loss_function(dot_product_decode(bias_Z), aug_adj_labels[i], encoder.mean, encoder.logstd, aug_norms[i], aug_weight_tensors[i], alpha, beta, train_mask)
-        intra_CL = intra_view_CL_loss(device, bias_Z, adj_label, gamma, temperature)
+        if(loss_ver=="nei"):
+            intra_CL = inter_view_CL_loss(device, bias_Z, bias_Z, adj_label, gamma, temperature)
+        else:
+            intra_CL = intra_view_CL_loss(device, bias_Z, adj_label, gamma, temperature)
         aug_losses = aug_loss  + intra_CL
         loss += aug_losses * aug_graph_weight
         #print(f'aug_loss: {aug_loss}, intra_CL: {intra_CL}')
