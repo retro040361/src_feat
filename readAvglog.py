@@ -1,15 +1,15 @@
 import pandas as pd
 
-dataset = "cora"
+dataset = "amazon_photo"
 ratio = [0.1,0.2,0.3,0.4,0.5]
-degree = [7,8,9]
+degree = [30,40,50]
 zzz = []
 for d in degree:
     for r in ratio:
         all_data = []
         title = f"avg_log/{dataset}_uncover_r{r}_d{d}_0612.csv"
         df = pd.read_csv(title)
-        avg_data = df.iloc[3]
+        avg_data = df.iloc[1]
         all_data.append(d)
         all_data.append(r)
         all_data.append(avg_data["test auc"])

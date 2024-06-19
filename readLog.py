@@ -9,15 +9,15 @@ if cwd.split('/')[-1] == "src":
 # 讀取.log文件
 date = "0612"
 subfolder = "uncover"
-degree = [7,8,9]
+degree = [30,40,50]
 ratio = [0.1,0.2,0.3,0.4,0.5]
 for d in degree:
     for r in ratio:
-        title = f"cora_uncover_r{r}_d{d}"
+        title = f"amazon_photo_uncover_r{r}_d{d}"
         all_result = []
-        for i in range(1,4):
+        for i in range(1,2):
             result = []
-            with open(f'{cwd}/log/{date}/{subfolder}/{title}_{i}.log', 'r') as f:
+            with open(f'{cwd}/log/{date}/{subfolder}/{title}_{i}_loss_origin.log', 'r') as f:
                 log_data = f.read()
 
             # 使用正則表達式來抓取需要的資料
