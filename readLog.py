@@ -7,15 +7,15 @@ if cwd.split('/')[-1] == "src":
     cwd=cwd[:-3]
 
 # 讀取.log文件
-date = "0612"
-subfolder = "uncover"
-degree = [30,40,50]
+date = "0620"
+subfolder = "v2"
+degree = [5,6,7,8,9]
 ratio = [0.1,0.2,0.3,0.4,0.5]
 for d in degree:
     for r in ratio:
-        title = f"amazon_photo_uncover_r{r}_d{d}"
+        title = f"citeseer_v2_r{r}_d{d}"
         all_result = []
-        for i in range(1,2):
+        for i in range(1,4):
             result = []
             with open(f'{cwd}/log/{date}/{subfolder}/{title}_{i}_loss_origin.log', 'r') as f:
                 log_data = f.read()
@@ -42,7 +42,7 @@ for d in degree:
                 # print(f"Hit@{hit_number}: Epoch {epoch}, hit@{hit_number} {hit_value}, val {val}")
             all_result.append(result)
 
-        df = pd.DataFrame(all_result,columns=["epoch","test auc","epoch","hit@1","auc","epoch","hit@3","auc","epoch","hit@10","auc","epoch","hit@20","auc"])
+        df = pd.DataFrame(all_result,columns=["epoch","test auc","epoch","hit@1","auc","epoch","hit@3","auc","epoch","hit@10","auc","epoch","hit@20","auc","epoch","hit@100","auc"])
         df=df.astype(float)
         column_means = df.mean()
         df.loc[len(df)] = column_means
