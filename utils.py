@@ -24,6 +24,7 @@ from sklearn.preprocessing import QuantileTransformer
 # from sklearn.neighbors import kneighbors_graph
 from torch.nn.functional import cosine_similarity
 from torch_scatter import scatter_add
+from dev import *
 def vMF_KDE(dataset_str, Z):
     def nomalize_embedding(Z, axis=-1, order=2):
         l2 = np.atleast_1d(np.linalg.norm(Z, order, axis))
@@ -395,29 +396,7 @@ def merge_neighbors_efficient(adj_label, adj_knn, tail_idx, r, k):
     return tail_mask.cpu(), keep_label_mask.cpu(), keep_knn_mask.cpu() #new_adj
 
 def purify_head_nodes_efficient(bias_Z, adj_matrix, head_idx, r, new_adj=None):
-    # cos_sim_matrix = cosine_similarity(bias_Z, bias_Z)
-    # normalized_cos_sim = cos_sim_matrix / cos_sim_matrix.sum(1, keepdim=True)
-    # head_adj = adj_matrix[head_idx]
-    # normalized_cos_sim_head = normalized_cos_sim[head_idx]
-    # # # 对于每个头节点，找到所有邻居的索引
-    # # neighbors_mask = head_adj > 0
-
-    # # 使用余弦相似度和邻居掩码计算实际的相似度
-    # # head_cos_sim = cos_sim_matrix[head_idx][:, neighbors_mask]
-    # # head_cos_sim = normalized_cos_sim[head_idx][:, neighbors_mask]
-
-    # # 计算需要保留的邻居数量
-    # # num_neighbors = neighbors_mask.sum(dim=1)
-    # # num_to_keep = (num_neighbors.float() * (1 - r)).long()
-    # num_to_keep = (head_adj.sum(dim=1)*(1-r)).ceil().int()
-    # # 对每行使用topk来找出相似度最高的邻居
-    # sampled_indices = torch.multinomial(normalized_cos_sim_head, num_to_keep.max(), replacement=True)
-    # # _, top_indices = torch.topk(head_cos_sim, k=num_to_keep.min().item(), dim=1, largest=True)
-
-    # # 重置所有头节点的邻接信息
-    # new_adj[head_idx] = 0
-    # new_adj[head_idx] = new_adj[head_idx].scatter_(1, sampled_indices, 1)
-    
+   
     num_nodes = adj_matrix.size(0)
     head_mask = torch.zeros(num_nodes, dtype=torch.bool, device=adj_matrix.device)
     head_mask[head_idx] = True
@@ -577,6 +556,34 @@ def degree_aug_v3(bias_Z, adj_label, degree,num_nodes, edge_flip_rate, threshold
     # head_adj_matrix = adj_[head_idx]
     
     return new_adj, 1
+
+def degree_aug_v3p(bias_Z, adj_label, degree,num_nodes, edge_flip_rate, threshold, epoch):
+    if(epoch < 200):
+        return adj_label, 1
+    device = torch.device( 'cuda' if torch.cuda.is_available() else 'cpu' )
+    kg_edge_index = knn_graph(bias_Z, k=threshold, metric='euclidean')
+    adj_knn = torch.sparse_coo_tensor(kg_edge_index, torch.ones(kg_edge_index.shape[1]), (num_nodes, num_nodes)).to_dense().to(device)
+
+    head_idx = torch.LongTensor(np.argwhere(degree >= threshold).flatten()).to(device)
+    
+    # promote low degree node
+    tail_idx = torch.LongTensor(np.argwhere(degree < threshold).flatten()).to(device)
+    tail_node_degree = degree[degree<threshold]
+ 
+    new_adj = merge_neighbors_v3p(adj_label, adj_knn,tail_idx, edge_flip_rate, threshold)
+    new_adj = purify_head_nodes_v3p(bias_Z, adj_label, head_idx, edge_flip_rate, new_adj)
+        
+    mask = torch.eye(new_adj.size(0), dtype=torch.bool).to(device)
+    new_adj.masked_fill_(mask, 0)
+    # print(new_adj)
+    # demote high degree node
+    # num_nodes = adj_label.size(0)
+    # head_mask = torch.zeros(num_nodes, dtype=torch.bool, device=adj_label.device)
+    # head_mask[head_idx] = True
+    # head_adj_matrix = adj_[head_idx]
+    
+    return new_adj, 1
+
 
 def Graph_Modify_Constraint(bias_Z, original_graph, k, bound):
     print("original function")
