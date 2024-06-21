@@ -369,8 +369,8 @@ def merge_neighbors_efficient(adj_label, adj_knn, tail_idx, r, k):
     tail_adj_knn = adj_knn[tail_mask]
 
     # 计算每个尾节点应该保留的邻居数（r%和1-r%）
-    num_neighbors_label = (tail_adj_label.sum(dim=1) * r).ceil().int()
-    num_neighbors_knn = int((1 - r) * k) #(tail_adj_knn.sum(dim=1) * (1 - r)).int()
+    num_neighbors_label = (tail_adj_label.sum(dim=1) * (1-r)).ceil().int()
+    num_neighbors_knn = int(r * k) #(tail_adj_knn.sum(dim=1) * (1 - r)).int()
 
     # 创建新的邻接矩阵
     new_adj = adj_label.clone()
@@ -475,7 +475,108 @@ def degree_aug_v2(bias_Z, adj_label, degree,num_nodes, edge_flip_rate, threshold
     
     return new_adj, 1
 
+#### 0621 
+#### try topk instead of multinomial
+def merge_neighbors_v3(adj_label, adj_knn, tail_idx, r, k):
+    num_nodes = adj_label.size(0)
+    tail_mask = torch.zeros(num_nodes, dtype=torch.bool, device=adj_label.device)
+    tail_mask[tail_idx] = True
 
+    # 提取尾节点的邻接信息
+    tail_adj_label = adj_label[tail_mask]
+    tail_adj_knn = adj_knn[tail_mask]
+
+    # 创建新的邻接矩阵
+    new_adj = adj_label.clone()
+    old_degrees = []
+    new_degrees = []
+    for i, idx in enumerate(tail_idx):
+        # 当前尾节点的原始邻居信息和KNN邻居信息
+        current_label_neighbors = tail_adj_label[i]
+        old_degrees.append(current_label_neighbors.sum().item())
+        current_knn_neighbors = tail_adj_knn[i]
+
+        # 计算应保留和新增的邻居数
+        num_to_keep_label = int((current_label_neighbors.sum() * (1-r)).ceil().item())
+        num_to_keep_knn = int((current_knn_neighbors.sum() * r).ceil().item())
+
+        # 随机选择原始邻居进行保留
+        if current_label_neighbors.sum() > 0:
+            all_label_indices = torch.where(current_label_neighbors > 0)[0]
+            rand_indices = torch.randperm(all_label_indices.size(0))[:num_to_keep_label]
+            keep_label_indices = all_label_indices[rand_indices]
+            label_mask = torch.zeros_like(current_label_neighbors)
+            label_mask[keep_label_indices] = 1
+        else:
+            label_mask = torch.zeros_like(current_label_neighbors)
+
+        # 随机选择KNN邻居进行添加
+        if current_knn_neighbors.sum() > 0:
+            all_knn_indices = torch.where(current_knn_neighbors > 0)[0]
+            rand_indices = torch.randperm(all_knn_indices.size(0))[:num_to_keep_knn]
+            keep_knn_indices = all_knn_indices[rand_indices]
+            knn_mask = torch.zeros_like(current_knn_neighbors)
+            knn_mask[keep_knn_indices] = 1
+        else:
+            knn_mask = torch.zeros_like(current_knn_neighbors)
+
+        # 更新邻接矩阵
+        all_mask = label_mask + knn_mask
+        new_adj[idx] = all_mask  # 使用逻辑或合并保留和新增的邻居
+        new_degrees.append(all_mask.sum().item())
+
+    print(f"[Tail Node] origin avg degree: {np.mean(old_degrees)}, augmented avg degree: {np.mean(new_degrees)}")
+    return new_adj
+def purify_head_nodes_v3(bias_Z, adj_matrix, head_idx, r, new_adj):
+    num_nodes = adj_matrix.size(0)
+    head_mask = torch.zeros(num_nodes, dtype=torch.bool, device=adj_matrix.device)
+    head_mask[head_idx] = True
+    
+    # sim_matrix = cosine_similarity(bias_Z, bias_Z)
+    sim_matrix = torch.matmul(bias_Z, bias_Z.t())
+    sim_matrix += 2*abs(torch.min(sim_matrix))
+    normalized_sim = sim_matrix / sim_matrix.sum(1)[:, None]
+    head_adj = adj_matrix[head_idx]
+    num_to_keep = (head_adj.sum(dim=1) * (1 - r)).ceil().int()
+    
+    new_adj[head_idx] = 0  # Reset adjacency connections for head nodes
+    
+    for i, idx in enumerate(head_idx):
+        current_sim = normalized_sim[idx]
+        n_keep = num_to_keep[i].item()
+        if n_keep > 0:
+            # Use topk to find the indices of the highest similarity scores
+            values, top_indices = torch.topk(current_sim, n_keep, largest=True, sorted=False)
+            new_adj[idx, top_indices] = 1  # Set new connections in the adjacency matrix
+
+    return new_adj
+
+def degree_aug_v3(bias_Z, adj_label, degree,num_nodes, edge_flip_rate, threshold, epoch):
+    if(epoch < 200):
+        return adj_label, 1
+    device = torch.device( 'cuda' if torch.cuda.is_available() else 'cpu' )
+    kg_edge_index = knn_graph(bias_Z, k=threshold, metric='euclidean')
+    adj_knn = torch.sparse_coo_tensor(kg_edge_index, torch.ones(kg_edge_index.shape[1]), (num_nodes, num_nodes)).to_dense().to(device)
+
+    head_idx = torch.LongTensor(np.argwhere(degree >= threshold).flatten()).to(device)
+    
+    # promote low degree node
+    tail_idx = torch.LongTensor(np.argwhere(degree < threshold).flatten()).to(device)
+    tail_node_degree = degree[degree<threshold]
+ 
+    new_adj = merge_neighbors_v3(adj_label, adj_knn,tail_idx, edge_flip_rate, threshold)
+    new_adj = purify_head_nodes_v3(bias_Z, adj_label, head_idx, edge_flip_rate, new_adj)
+        
+    mask = torch.eye(new_adj.size(0), dtype=torch.bool).to(device)
+    new_adj.masked_fill_(mask, 0)
+    # print(new_adj)
+    # demote high degree node
+    # num_nodes = adj_label.size(0)
+    # head_mask = torch.zeros(num_nodes, dtype=torch.bool, device=adj_label.device)
+    # head_mask[head_idx] = True
+    # head_adj_matrix = adj_[head_idx]
+    
+    return new_adj, 1
 
 def Graph_Modify_Constraint(bias_Z, original_graph, k, bound):
     print("original function")

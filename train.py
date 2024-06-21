@@ -305,8 +305,8 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
 
     best_acc = 0.0; best_roc = 0.0; best_ap = 0.0
     best_hit1 = 0.0;best_hit3 = 0.0;best_hit10 = 0.0; best_hit20 = 0.0; best_hit50 = 0.0; best_hit100 = 0.0
-    best_hit1_roc = 0.0;best_hit3_roc = 0.0;best_hit10_roc = 0.0; best_hit20_roc = 0.0; best_hit100_roc = 0.0
-    best_hit1_ep = 0.0;best_hit3_ep = 0.0;best_hit10_ep = 0.0; best_hit20_ep = 0.0; best_hit100_ep = 0.0
+    best_hit1_roc = 0.0;best_hit3_roc = 0.0;best_hit10_roc = 0.0; best_hit20_roc = 0.0; best_hit50_roc = 0.0; best_hit100_roc = 0.0
+    best_hit1_ep = 0.0;best_hit3_ep = 0.0;best_hit10_ep = 0.0; best_hit20_ep = 0.0; best_hit50_ep = 0.0; best_hit100_ep = 0.0
     modification_ratio_history = []
     roc_history = []
     # train model
@@ -383,7 +383,9 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
             if(ver=="uncover"):
                 g, modification_ratio = degree_aug(Z.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)
             if(ver=="v2"):
-                g, modification_ratio = degree_aug_v2(Z.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)
+                g, modification_ratio = degree_aug_v2(Z.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)            
+            if(ver=="v3"):
+                g, modification_ratio = degree_aug_v3(Z.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)
                 
             ## random modification
             # g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
@@ -460,8 +462,12 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
             best_hit20 = test_hit[3]
             best_hit20_roc = test_roc
             best_hit20_ep = epoch 
-        if test_hit[4] > best_hit100:
-            best_hit100 = test_hit[4]
+        if test_hit[4] > best_hit50:
+            best_hit50 = test_hit[4]
+            best_hit50_roc = test_roc
+            best_hit50_ep = epoch 
+        if test_hit[5] > best_hit100:
+            best_hit100 = test_hit[5]
             best_hit100_roc = test_roc
             best_hit100_ep = epoch    
         if test_roc > best_roc:
@@ -479,11 +485,12 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     print(f'best hit@3 epoch = {best_hit3_ep}, hit@3 = {best_hit3}, val = {best_hit3_roc}')
     print(f'best hit@10 epoch = {best_hit10_ep}, hit@10 = {best_hit10}, val = {best_hit10_roc}')
     print(f'best hit@20 epoch = {best_hit20_ep}, hit@20 = {best_hit20}, val = {best_hit20_roc}')
+    print(f'best hit@50 epoch = {best_hit50_ep}, hit@50 = {best_hit50}, val = {best_hit50_roc}')
     print(f'best hit@100 epoch = {best_hit100_ep}, hit@100 = {best_hit100}, val = {best_hit100_roc}')
     # print(f'best hit@50 epoch = {best_hit50_ep}, hit@50 = {best_hit50}, val = {best_hit50_roc}')
     test_roc, test_ap, test_hit = get_scores(dataset_str,test_edges, test_edges_false, A_pred.data.cpu(), adj_orig)
     print(f'End of training!\ntest_roc={test_roc:.5f}, test_ap={test_ap:.5f}')
-    print(f'Hit@K for test: 1={test_hit[0]}, 3={test_hit[1]}, 10={test_hit[2]}, 20={test_hit[3]}, 100={test_hit[4]}')
+    print(f'Hit@K for test: 1={test_hit[0]}, 3={test_hit[1]}, 10={test_hit[2]}, 20={test_hit[3]}, 50={test_hit[4]}, 100={test_hit[5]}')
     
     return encoder.Z.clone().detach(), roc_history, modification_ratio_history, edge_index
 
@@ -522,7 +529,7 @@ def get_scores(dataset_str,edges_pos, edges_neg, adj_rec, adj_orig):
     ap_score = average_precision_score(labels_all, preds_all)
     hitk = []
     # evaluator = Evaluator(name=dataset_str)
-    for k in [1,3,10,20,100]:
+    for k in [1,3,10,20,50,100]:
         hitk.append(eval_hits(torch.tensor(preds), torch.tensor(preds_neg),k))
         # evaluator.K = k
         # hits = evaluator.eval({
