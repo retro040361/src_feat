@@ -3,7 +3,8 @@ import sys
 import atexit
 import torch
 import numpy as np
-from train import train_encoder, train_classifier, logist_regressor_classification
+# from train import train_encoder, train_classifier, logist_regressor_classification
+from train_0624 import train_encoder, train_classifier, logist_regressor_classification
 from input_data import load_data
 from utils import Visualize, Plot, Visualize_with_edge, gaussion_KDE, vMF_KDE
 from torch_geometric.utils.convert import from_scipy_sparse_matrix
@@ -33,6 +34,7 @@ parser.add_argument('--ver', type=str, default = "origin", help='modified versio
 parser.add_argument('--idx', type=str, default = "1", help='index') # [1,2,3,4,5]
 parser.add_argument('--degree_threshold', type=int, default = 9, help='degree threshold') # [1,2,3,4,5]
 parser.add_argument('--loss_ver', type=str, default = "origin", help='loss version') # [origin, nei]
+parser.add_argument('--feature_ratio', type=float, default = 0.1, help='feature knn ratio')
 
 
 args = parser.parse_args()

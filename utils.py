@@ -593,6 +593,28 @@ def degree_aug_v3p(bias_Z, adj_label, degree,num_nodes, edge_flip_rate, threshol
     
     return new_adj, 1
 
+## 0624
+def feature_aug(adj_label, x, ratio, threshold):
+    device = torch.device( 'cuda' if torch.cuda.is_available() else 'cpu' )
+    num_nodes = adj_label.shape[0]
+    kg_edge_index = knn_graph(x, k=threshold, metric='euclidean')
+    adj_knn = torch.sparse_coo_tensor(kg_edge_index, torch.ones(kg_edge_index.shape[1]), (num_nodes, num_nodes)).to_dense().to(device)
+    
+    retain_num = math.ceil(threshold * ratio)
+    
+    # Get the top 'retain_num' values for each row (node) in the adjacency matrix
+    values, indices = torch.topk(adj_knn, retain_num, dim=1)
+    
+    # Create a new adjacency matrix with only the top 'retain_num' connections per node
+    pruned_adj_knn = torch.zeros_like(adj_knn)
+    pruned_adj_knn.scatter_(1, indices, values)
+
+    # Combine the original adj_label with the pruned adj_knn
+    combined_adj = adj_label.to(device) + pruned_adj_knn
+    # Optionally, you might want to threshold the combined matrix
+    combined_adj[combined_adj > 1] = 1  # Ensure the adjacency matrix entries are 0 or 1
+    
+    return combined_adj
 
 def Graph_Modify_Constraint(bias_Z, original_graph, k, bound):
     print("original function")
