@@ -145,7 +145,7 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     attn_o = AttentionModule(hidden2, num_nodes).to(device)
     mse_loss = nn.MSELoss()
     
-    aug_feat_graph = feature_aug(adj_label, features.to_dense(), feature_ratio, degree_threshold)
+    aug_feat_graph = feature_aug(adj_label.to_dense(), features.to_dense(), feature_ratio, degree_threshold)
     aug_feat_edge_index = aug_feat_graph.to_sparse().indices()
     
     for epoch in tqdm(range(num_epoch)):

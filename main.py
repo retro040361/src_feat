@@ -61,7 +61,7 @@ def main():
     # print(f"idx_test:{idx_test}")
     Z, roc_history, modification_ratio_history, edge_index = train_encoder(args.dataset_str, device, args.epochs, adj, features, args.hidden1, args.hidden2, args.dropout, args.lr, args.weight_decay, 
                             args.aug_graph_weight, args.aug_ratio, args.aug_bound, args.alpha, args.beta, args.gamma, args.delta, args.temperature,
-                            labels, idx_train, idx_val, idx_test, args.ver, args.degree_threshold, args.loss_ver)
+                            labels, idx_train, idx_val, idx_test, args.ver, args.degree_threshold, args.loss_ver, args.feature_ratio)
     
     Plot(args.dataset_str, roc_history, modification_ratio_history)
     gaussion_KDE(args.dataset_str, Z)
@@ -78,7 +78,7 @@ def main():
 if __name__ == '__main__':
     if args.logging == True:
         old_stdout = sys.stdout
-        log_file = open(f'log/{args.date}/{args.dataset_str}_{args.ver}_r{args.aug_ratio}_d{args.degree_threshold}_w{args.aug_graph_weight}_{args.idx}_loss_{args.loss_ver}.log',"w")
+        log_file = open(f'log/{args.date}/{args.dataset_str}_{args.ver}_r{args.aug_ratio}_fr{args.feature_ratio}_d{args.degree_threshold}_w{args.aug_graph_weight}_{args.idx}_loss_{args.loss_ver}.log',"w")
         sys.stdout = log_file
         
         set_random_seed(args.seed)

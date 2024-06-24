@@ -609,8 +609,16 @@ def feature_aug(adj_label, x, ratio, threshold):
     pruned_adj_knn = torch.zeros_like(adj_knn)
     pruned_adj_knn.scatter_(1, indices, values)
 
+    num_to_keep = (adj_label.sum(dim=1)*(1-ratio)).ceil().int()
+    
+    sim_matrix = torch.matmul(x, x.t())
+    sim_matrix += 2*abs(torch.min(sim_matrix))
+    normalized_sim = sim_matrix / sim_matrix.sum(1)[:,None]
+    sampled_indices = torch.multinomial(normalized_sim, num_to_keep.max(), replacement=True)
+    keep_label_mask = torch.zeros_like(adj_label).scatter_(1, sampled_indices, 1)
+
     # Combine the original adj_label with the pruned adj_knn
-    combined_adj = adj_label.to(device) + pruned_adj_knn
+    combined_adj = keep_label_mask.to(device) + pruned_adj_knn
     # Optionally, you might want to threshold the combined matrix
     combined_adj[combined_adj > 1] = 1  # Ensure the adjacency matrix entries are 0 or 1
     
