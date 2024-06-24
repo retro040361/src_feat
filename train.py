@@ -29,7 +29,7 @@ from utils import *
 from input_data import CalN2V
 
 from sklearn.metrics.pairwise import cosine_similarity
-
+from attnFuse import AttentionModule, GCN, FeatureDecoder
 # TODO: maximize variance while minimize difference in aug graph
 # -> maximize variance and bound the cosine similarity lower bound of aug_Z and Z
 # TODO: freeze data augmenter while (minimized avg reconstruction loss / min KL divergence of edge prob)
@@ -296,9 +296,13 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     weight_tensor[weight_mask] = pos_weight
 
     # init model and optimizer
-    encoder = VGNAE_ENCODER(feat_dim, hidden1, hidden2, dropout, device).to(device) # encoder = VGAE_ENCODER(feat_dim, hidden1, hidden2, dropout, device).to(device)
-    optimizer = Adam(encoder.parameters(), lr = learning_rate, weight_decay = weight_decay)
-
+    encoder1 = VGNAE_ENCODER(feat_dim, hidden1, hidden2, dropout, device).to(device) # encoder = VGAE_ENCODER(feat_dim, hidden1, hidden2, dropout, device).to(device)
+    encoder2 = VGNAE_ENCODER(feat_dim, hidden1, hidden2, dropout, device).to(device) # encoder = VGAE_ENCODER(feat_dim, hidden1, hidden2, dropout, device).to(device)
+    feature_decoder = FeatureDecoder(hidden2, hidden1, feat_dim).to(device)
+    optimizer1 = Adam(encoder1.parameters(), lr = learning_rate, weight_decay = weight_decay)
+    optimizer2 = Adam(encoder2.parameters(), lr = learning_rate, weight_decay = weight_decay)
+    optimizer3 = Adam(feature_decoder.parameters(), lr = learning_rate, weight_decay = weight_decay)
+    
     data_augmenter = MLP(hidden2, hidden2).to(device)
     # data_augmenter = VGAE_ENCODER(feat_dim, hidden1, hidden2, dropout, device).to(device)
     data_augmenter_optimizer = Adam(data_augmenter.parameters(), lr = 0.01, weight_decay = weight_decay)
@@ -321,15 +325,15 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
         neighbors[u].add(v)
         neighbors[v].add(u)
 
-    # common_neighbors_count = {}
-    common_neighbors_count = np.zeros((num_nodes, num_nodes), dtype=int)
+    common_neighbors_count = {}
+    # common_neighbors_count = np.zeros((num_nodes, num_nodes), dtype=int)
     total = 0
-    for u in range(num_nodes):
-        for v in range(u + 1, num_nodes):  
-            if u in neighbors and v in neighbors:
-                common_neighbors = neighbors[u].intersection(neighbors[v])
-                common_neighbors_count[u][v] = common_neighbors_count[v][u] = len(common_neighbors)
-                total += len(common_neighbors)
+    # for u in range(num_nodes):
+    #     for v in range(u + 1, num_nodes):  
+    #         if u in neighbors and v in neighbors:
+    #             common_neighbors = neighbors[u].intersection(neighbors[v])
+    #             common_neighbors_count[u][v] = common_neighbors_count[v][u] = len(common_neighbors)
+    #             total += len(common_neighbors)
     avg_cn_cnt = float(total) / (num_nodes*(num_nodes-1)/2)
     
     feat_sim = cosine_similarity(features.to_dense().cpu())
@@ -341,94 +345,130 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     #                 common_neighbors_count[(u, v)] = len(common_neighbors)
     #                 common_neighbors_count[(v, u)] = len(common_neighbors)
     degree = np.array(adj_label.to_dense().cpu().sum(0)).squeeze()
+    print(f"dataset avg degree: {np.mean(degree)}")
+    attn_ft = AttentionModule(hidden2, num_nodes).to(device)
+    attn_o = AttentionModule(hidden2, num_nodes).to(device)
+    mse_loss = nn.MSELoss()
     for epoch in tqdm(range(num_epoch)):
         t = time.time()
-        encoder.train()
-        optimizer.zero_grad()
+        encoder1.train()
+        encoder2.train()
+        feature_decoder.train()
+        attn_ft.train()
+        attn_o.train() 
+        optimizer1.zero_grad()
+        optimizer2.zero_grad()
+        optimizer3.zero_grad()
         
-        Z = encoder(features, edge_index) # Z = encoder(features, adj_norm)
-        hidden_repr = encoder.Z
+        Z_o1 = encoder1(features, edge_index) # Z = encoder(features, adj_norm)
+        Z_o2 = encoder2(features, edge_index) # Z = encoder(features, adj_norm)
+        hidden_repr_o1 = encoder1.Z
+        hidden_repr_o2 = encoder2.Z
+        Z_o1_mean = encoder1.mean; Z_o1_logstd = encoder1.logstd
+        Z_o2_mean = encoder2.mean; Z_o2_logstd = encoder2.logstd
 
-        # original loss
-        A_pred = dot_product_decode(Z)
-
-                # adjusted_weight_tensor = weight_tensor * torch.abs(A_pred.view(-1)[train_mask] - adj_label.to_dense().view(-1)[train_mask]).detach()
-                # recon_loss = loss_function(A_pred, adj_label, encoder.mean, encoder.logstd, norm, adjusted_weight_tensor, alpha, beta, train_mask)
-        recon_loss = loss_function(A_pred, adj_label, encoder.mean, encoder.logstd, norm, weight_tensor, alpha, beta, train_mask)
-        if(loss_ver=="nei"):
-            ori_intra_CL = inter_view_CL_loss(device, Z, Z, adj_label, gamma, temperature)
-        else:
-            ori_intra_CL = intra_view_CL_loss(device, Z, adj_label, gamma, temperature)
-        loss = recon_loss + ori_intra_CL
-        
+        alpha_o1, alpha_o2 = attn_o(Z_o1,Z_o2)
+        alpha_o1 = alpha_o1.unsqueeze(1)
+        alpha_o2 = alpha_o2.unsqueeze(1)
+        print(f"Shape: alpha_o1:{alpha_o1.shape}, Z_o1:{Z_o1.shape}, alpha_o2:{alpha_o2.shape}, Z_o2:{Z_o2.shape}")
+        Zo = alpha_o1*Z_o1 + alpha_o2*Z_o2
+        Z_o_mean = alpha_o1*Z_o1_mean + alpha_o2*Z_o2_mean; Z_o_logstd = alpha_o1*Z_o1_logstd + alpha_o2*Z_o2_logstd
         # Generate K graphs
+        
         if epoch % 10 == 0:
             if epoch != 0:
                 del aug_edge_index # del aug_edge_weights # del aug_adj_labels # del aug_norms # del aug_weight_tensors
                 torch.cuda.empty_cache()
-            print(f'loss: {loss}, recon loss: {recon_loss}')
 
-            ###
             k = (num_nodes-1) * num_nodes * aug_ratio
             if(ver=="origin"):
-                g, modification_ratio = Graph_Modify_Constraint(Z.detach(), adj_label.to_dense(), int(k), aug_bound)
+                g, modification_ratio = Graph_Modify_Constraint(Zo.detach(), adj_label.to_dense(), int(k), aug_bound)
             if(ver=="thm_exp"):
-                g, modification_ratio = Graph_Modify_Constraint_exp(Z.detach(), adj_label.to_dense(), int(k), aug_bound)
+                g, modification_ratio = Graph_Modify_Constraint_exp(Zo.detach(), adj_label.to_dense(), int(k), aug_bound)
             if(ver=="random"):
                 g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
             if(ver=="local"):
-                g, modification_ratio = Graph_Modify_Constraint_local(Z.detach(), adj_label.to_dense(), int(k), aug_bound, common_neighbors_count, avg_cn_cnt)
+                g, modification_ratio = Graph_Modify_Constraint_local(Zo.detach(), adj_label.to_dense(), int(k), aug_bound, common_neighbors_count, avg_cn_cnt)
             if(ver=="feat"):
-                g, modification_ratio = Graph_Modify_Constraint_feat(Z.detach(), adj_label.to_dense(), int(k), aug_bound, feat_sim)
+                g, modification_ratio = Graph_Modify_Constraint_feat(Zo.detach(), adj_label.to_dense(), int(k), aug_bound, feat_sim)
             if(ver=="uncover"):
-                g, modification_ratio = degree_aug(Z.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)
+                g, modification_ratio = degree_aug(Zo.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)
             if(ver=="v2"):
-                g, modification_ratio = degree_aug_v2(Z.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)            
+                g, modification_ratio = degree_aug_v2(Zo.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)            
             if(ver=="v3"):
-                g, modification_ratio = degree_aug_v3(Z.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)
+                g, modification_ratio = degree_aug_v3(Zo.detach(), adj_label.to_dense(),degree, num_nodes, aug_ratio, degree_threshold, epoch)
+
                 
-            ## random modification
-            # g, modification_ratio = aug_random_edge(adj_label.to_dense(),aug_ratio)
-                
+            ### TODO Feature augmentation
+            aug_features = drop_feature(features.to_dense(), aug_ratio)
+            
             aug_edge_index = g.to_sparse().indices()
-            print(edge_index.shape)
-            print(aug_edge_index.shape)
-            # aug_edge_index, modification_ratio = generate_augmented_views(device, data_augmenter, data_augmenter_optimizer, encoder.Z.clone().detach(), adj_label, encoder.mean.clone().detach(), encoder.logstd.clone().detach(), train_mask, norm, weight_tensor, alpha, beta, gamma, temperature)
-            # aug_edge_index, modification_ratio = generate_augmented_views(device, data_augmenter, data_augmenter_optimizer, hidden_repr.detach(), features, adj_norm, adj_label, train_mask, norm, weight_tensor, alpha, beta, gamma, temperature)
-            ###
+
+
 
         modification_ratio_history.append(modification_ratio)
 
         # Calcualte Augment View
-        bias_Z = encoder(features, aug_edge_index)
-
-        # Overall losses        
-        loss += inter_view_CL_loss(device, hidden_repr, encoder.Z.detach(), adj_label, delta, temperature)
-        aug_loss = loss_function(dot_product_decode(bias_Z), adj_label, encoder.mean, encoder.logstd, norm, weight_tensor, alpha, beta, train_mask) # aug_loss = loss_function(dot_product_decode(bias_Z), aug_adj_labels[i], encoder.mean, encoder.logstd, aug_norms[i], aug_weight_tensors[i], alpha, beta, train_mask)
+        Z_t = encoder1(features, aug_edge_index)    # Z topology
+        Z_t_mean = encoder1.mean; Z_t_logstd = encoder1.logstd
+        Z_f = encoder2(aug_features, edge_index)
+        Z_f_mean = encoder2.mean; Z_f_logstd = encoder2.logstd
+        
+        # AttnFusion
+        # attn_ft = AttentionModule(hidden2, num_nodes)
+        alpha_f, alpha_t = attn_ft(Z_f,Z_t)
+        alpha_f = alpha_f.unsqueeze(1)
+        alpha_t = alpha_t.unsqueeze(1)
+        Zft = alpha_f*Z_f + alpha_t*Z_t
+        Z_ft_mean = alpha_f*Z_f_mean + alpha_t*Z_t_mean; Z_ft_logstd = alpha_f*Z_f_logstd + alpha_t*Z_t_logstd
+        
+        # print(f"Shape: aug_features: {aug_features.shape}, feat_dim:{feat_dim}, hidden1: {hidden1}, hidden2: {hidden2}, Z_f:{Z_f.shape}")
+        recon_feat = feature_decoder(Z_f)
+        # print(f"Shape: recon feat:{recon_feat.shape}")
+        
+        # Loss
+        loss = torch.mean((Z_o1 - Z_o2) ** 2) # alignment loss
+        loss += inter_view_CL_loss(device, Zo, Zft, adj_label, delta, temperature)
+        
         if(loss_ver=="nei"):
-            intra_CL = inter_view_CL_loss(device, bias_Z, bias_Z, adj_label, gamma, temperature)
+            intra_CLft = inter_view_CL_loss(device, Zft, Zft, adj_label, gamma, temperature)
+            intra_CLo = inter_view_CL_loss(device, Zo, Zo, adj_label, gamma, temperature)
         else:
-            intra_CL = intra_view_CL_loss(device, bias_Z, adj_label, gamma, temperature)
-        aug_losses = aug_loss  + intra_CL
-        loss += aug_losses * aug_graph_weight
-        #print(f'aug_loss: {aug_loss}, intra_CL: {intra_CL}')
+            intra_CLft = intra_view_CL_loss(device, Zft, adj_label, gamma, temperature)
+            intra_CLo = intra_view_CL_loss(device, Zo, adj_label, gamma, temperature)
+            
+        loss += intra_CLo
+        Aft_pred = dot_product_decode(Zft)
+        Ao_pred = dot_product_decode(Zo)
+        loss += aug_graph_weight * loss_function(Aft_pred, adj_label, Z_ft_mean, Z_ft_logstd, norm, weight_tensor, alpha, beta, train_mask)    # aug fusion reconstruction loss
+        loss += loss_function(Ao_pred, adj_label, Z_o_mean, Z_o_logstd, norm, weight_tensor, alpha, beta, train_mask)   # origin reconstruction loss
+        loss += aug_graph_weight * intra_CLft
+        loss += aug_graph_weight * mse_loss(recon_feat, features.to_dense())
+
 
         # Update Model
         loss.backward()
-        optimizer.step()
+        optimizer1.step()
+        optimizer2.step()
+        optimizer3.step()
         
-        del bias_Z
-        del encoder.Z
-        del encoder.mean
-        del encoder.logstd
-        del Z
-        del hidden_repr
+        # del bias_Z
+        # del encoder.Z
+        # del encoder.mean
+        # del encoder.logstd
+        # del Z
+        # del hidden_repr
         torch.cuda.empty_cache()
         ########################################################
         # Evaluate edge prediction
-        encoder.eval()
+        encoder1.eval()
+        encoder2.eval()
         with torch.no_grad():
-            Z = encoder(features, edge_index) # Z = encoder(features, adj_norm)
+            Z1 = encoder1(features, edge_index) # Z = encoder(features, adj_norm)
+            Z2 = encoder2(features, edge_index) # Z = encoder(features, adj_norm)
+            alpha1, alpha2 = attn_o(Z1,Z2)
+            alpha1 = alpha1.unsqueeze(1);alpha2 = alpha2.unsqueeze(1)
+            Z = alpha1*Z1 + alpha2*Z2
             A_pred = dot_product_decode(Z)
         # A_pred = train_decoder(device, encoder.Z.clone().detach(), adj_label, weight_tensor, norm, train_mask)
         print(A_pred.shape)
@@ -492,7 +532,7 @@ def train_encoder(dataset_str, device, num_epoch, adj, features, hidden1, hidden
     print(f'End of training!\ntest_roc={test_roc:.5f}, test_ap={test_ap:.5f}')
     print(f'Hit@K for test: 1={test_hit[0]}, 3={test_hit[1]}, 10={test_hit[2]}, 20={test_hit[3]}, 50={test_hit[4]}, 100={test_hit[5]}')
     
-    return encoder.Z.clone().detach(), roc_history, modification_ratio_history, edge_index
+    return Z.clone().detach(), roc_history, modification_ratio_history, edge_index
 
 
 

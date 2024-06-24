@@ -275,6 +275,15 @@ def Visualize_with_edge(dataset_str, Z, labels, edge_index):
 #         dist_list.append(dist)
 #     dist_list = torch.stack(dist_list, dim=0)
 #     return dist_list
+
+def drop_feature(x, drop_prob):
+    drop_mask = torch.empty((x.size(1),),
+                        dtype=torch.float32,
+                        device=x.device).uniform_(0, 1) < drop_prob
+    x = x.clone()
+    x[:, drop_mask] = 0
+    return x
+
 def get_sim(embeds1, embeds2):
     # normalize embeddings across feature dimension
     embeds1 = F.normalize(embeds1)
@@ -371,7 +380,7 @@ def merge_neighbors_efficient(adj_label, adj_knn, tail_idx, r, k):
 
     # 计算每个尾节点应该保留的邻居数（r%和1-r%）
     num_neighbors_label = (tail_adj_label.sum(dim=1) * (1-r)).ceil().int()
-    num_neighbors_knn = int(r * k) #(tail_adj_knn.sum(dim=1) * (1 - r)).int()
+    num_neighbors_knn = math.ceil(r * k) #(tail_adj_knn.sum(dim=1) * (1 - r)).int()
 
     # 创建新的邻接矩阵
     new_adj = adj_label.clone()
